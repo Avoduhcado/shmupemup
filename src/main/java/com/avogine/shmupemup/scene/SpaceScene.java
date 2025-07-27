@@ -94,7 +94,7 @@ public class SpaceScene extends Scene {
 		initAliens();
 		
 //		StaticModel bobModel = ModelLoader.loadModel("bob", MODELS.with("dancing_vampire.dae"), textureCache);
-		Model bobModel = new AvoModelLoader().loadModel("bob", MODELS.with("dancing_vampire.dae"), textureCache, true);
+		Model bobModel = ModelLoader.loadModel("bob", MODELS.with("dancing_vampire.dae"), textureCache, true);
 		animatedModels.add(bobModel);
 		
 		AnimationData bobAnimation = new AnimationData(bobModel.getAnimations().getFirst());
@@ -171,7 +171,7 @@ public class SpaceScene extends Scene {
 					memAllocInt(parMesh.ntriangles() * 3).put(parMesh.triangles(parMesh.ntriangles() * 3)).flip());
 			var instancedBuffers = new InstancedBuffers(instanceMatrices, instanceNormals);
 			try {
-				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1, instancedBuffers), instanceCount);
+				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1), new InstancedData(instancedBuffers, instanceCount));
 			} finally {
 				ParShapes.par_shapes_free_mesh(parMesh);
 			}
@@ -186,7 +186,7 @@ public class SpaceScene extends Scene {
 //		var playerMaterial = new Material(new Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
 //		var playerMesh = ParShapesLoader.loadCubemap(2);
 //		var playerModel = new Model("player", playerMesh, playerMaterial);
-		var playerModel = new AvoModelLoader().loadModel("player", MODELS.with("backpack", "backpack.obj"), textureCache, false);
+		var playerModel = ModelLoader.loadModel("player", MODELS.with("backpack", "backpack.obj"), textureCache, false);
 //		Model playerModel = StaticModelLoader.loadModel("player", ResourceConstants.MODEL_PATH + "bunny.obj");
 		staticModels.add(playerModel);
 		AABBf playerAABB = playerModel.getAabb();
@@ -276,7 +276,7 @@ public class SpaceScene extends Scene {
 //		var alienMaterial = new Material(new Vector4f(0.0f, 0.8f, 0.0f, 1.0f));
 //		Mesh alienMesh = new ParShapesBuilder().createSphere(2).scale(0.25f, 0.25f, 0.25f).build();
 //		var alienModel = new Model(alienModelId, alienMesh, alienMaterial);
-		var alienModel = new AvoModelLoader().loadModel(alienModelId, MODELS.with("bunny.obj"), textureCache, false);
+		var alienModel = ModelLoader.loadModel(alienModelId, MODELS.with("bunny.obj"), textureCache, false);
 		addModel(alienModel);
 		var alienBodyAABB = alienModel.getAabb();
 		var alienBodyConstraints = new BodyConstraints(alienBodyAABB, 0x10, 0x0);

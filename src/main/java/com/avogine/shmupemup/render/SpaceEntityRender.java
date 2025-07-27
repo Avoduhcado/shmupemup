@@ -11,9 +11,9 @@ import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryUtil;
 
 import com.avogine.entity.AnimationData;
-import com.avogine.render.model.util.AssimpModelLoader;
 import com.avogine.render.opengl.*;
 import com.avogine.render.opengl.model.mesh.Mesh;
+import com.avogine.render.opengl.model.util.ModelLoader;
 import com.avogine.render.shader.*;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.render.shaders.*;
@@ -25,7 +25,7 @@ import com.avogine.shmupemup.scene.entities.SpaceEntity;
  */
 public class SpaceEntityRender {
 	
-	private static final Matrix4f[] DEFAULT_BONES_MATRICES = new Matrix4f[AssimpModelLoader.MAX_BONES];
+	private static final Matrix4f[] DEFAULT_BONES_MATRICES = new Matrix4f[ModelLoader.MAX_BONES];
 
 	static {
 		Matrix4f zeroMatrix = new Matrix4f().zero();

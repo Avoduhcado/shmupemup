@@ -65,10 +65,11 @@ public class StarmapRender {
 		}
 		vertexData.flip();
 		
-		VAO starVAO = VAO.gen().bind()
-				.vertexBuffer(VBO.gen()
-						.bind().bufferData(vertexData, GL_STREAM_DRAW)
-						.enable(VertexAttrib.array(0).pointer(Pointer.tightlyPackedUnnormalizedFloat(3))));
+		VAO starVAO = VAO.gen(() -> {
+			var vbo = VBO.gen().bind().bufferData(vertexData, GL_STREAM_DRAW);
+			VertexAttrib.array(0).pointer(Pointer.tightlyPackedUnnormalizedFloat(3)).enable();
+			return vbo;
+		});
 		MemoryUtil.memFree(vertexData);
 
 		int cubemapSize = 4096;
