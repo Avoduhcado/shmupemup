@@ -1,19 +1,38 @@
 package com.avogine.shmupemup.render.data;
 
+import java.util.ArrayList;
+
 import org.joml.Vector4f;
 
-import com.avogine.render.opengl.model.Material;
+import com.avogine.render.opengl.model.material.CustomMaterial;
 
 /**
  *
  */
-public class EmissiveMaterial extends Material {
+public final class EmissiveMaterial extends CustomMaterial {
+	
+	private Vector4f emissive;
 
 	/**
-	 * @param emission 
+	 * @param emissive 
 	 */
-	public EmissiveMaterial(Vector4f emission) {
-		super(emission);
+	public EmissiveMaterial(Vector4f emissive) {
+		super(new ArrayList<>());
+		this.emissive = emissive;
+	}
+	
+	/**
+	 * @return the emissive
+	 */
+	public Vector4f getEmissive() {
+		return emissive;
+	}
+	
+	/**
+	 * @param emissive the emissive to set
+	 */
+	public void setEmissive(Vector4f emissive) {
+		this.emissive = emissive;
 	}
 
 }

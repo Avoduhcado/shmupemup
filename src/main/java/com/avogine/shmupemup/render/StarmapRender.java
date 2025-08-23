@@ -7,6 +7,7 @@ import static org.lwjgl.opengl.GL30.*;
 
 import java.lang.Math;
 import java.nio.FloatBuffer;
+import java.util.function.Function;
 
 import org.joml.*;
 import org.lwjgl.opengl.GL13;
@@ -17,8 +18,9 @@ import com.avogine.render.image.ImageData;
 import com.avogine.render.image.data.PixelBuffer;
 import com.avogine.render.opengl.*;
 import com.avogine.render.opengl.Texture.*;
-import com.avogine.render.opengl.VertexAttrib.Pointer;
-import com.avogine.render.opengl.model.mesh.Mesh;
+import com.avogine.render.opengl.VertexArrayObject.*;
+import com.avogine.render.opengl.VertexArrayObject.VertexAttrib.Format;
+import com.avogine.render.opengl.model.mesh.StaticMesh;
 import com.avogine.render.opengl.model.util.ParShapesLoader;
 import com.avogine.shmupemup.render.shaders.*;
 
@@ -29,10 +31,20 @@ import com.avogine.shmupemup.render.shaders.*;
  */
 public class StarmapRender {
 
+	private static final Function<FloatBuffer, Builder> STAR_VAO = vertexData -> {
+		try (var builder = new VertexArrayObject.Builder()) {
+			return builder
+					.buffer(VertexBufferObject.arrayBufferWithUsage(GL_STREAM_DRAW, vertexData))
+					.attrib(VertexAttrib.array(0).pointer(Format.tightlyPackedUnnormalizedFloat(3)));
+		} finally {
+			MemoryUtil.memFree(vertexData);
+		}
+	};
+	
 	private StarmapShader starmapShader;
 	
 	private Texture starCubemap;
-	private Mesh starCube;
+	private StaticMesh starCube;
 	
 	private final Matrix4f projectionView;
 	private final Matrix4f noTranslationView;
@@ -65,13 +77,13 @@ public class StarmapRender {
 		}
 		vertexData.flip();
 		
-		VAO starVAO = VAO.gen(() -> {
-			var vbo = VBO.gen().bind().bufferData(vertexData, GL_STREAM_DRAW);
-			VertexAttrib.array(0).pointer(Pointer.tightlyPackedUnnormalizedFloat(3)).enable();
-			return vbo;
-		});
-		MemoryUtil.memFree(vertexData);
-
+		var starVAO = new VertexArrayObject(STAR_VAO.apply(vertexData)) {
+			@Override
+			public void draw() {
+				glDrawArrays(GL_POINTS, 0, starsToRender);
+			}
+		};
+		
 		int cubemapSize = 4096;
 		var cubemapImage2D = new ImageData(cubemapSize, cubemapSize, GL_RGBA, new PixelBuffer(null));
 		starCubemap = Texture.gen(GL13.GL_TEXTURE_CUBE_MAP).bind()
@@ -101,6 +113,7 @@ public class StarmapRender {
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
 		spaceShader.projection.loadMatrix(projection);
+		starVAO.bind();
 		for (int i = 0; i < 6; i++) {
 			starFBO.attachTexture2D(GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, starCubemap.id(), 0);
 
@@ -109,11 +122,11 @@ public class StarmapRender {
 			orientView(view, i);
 			spaceShader.view.loadMatrix(view);
 
-			glDrawArrays(GL_POINTS, 0, starsToRender);
+			starVAO.draw();
 		}
 
 		FBO.unbind();
-		VAO.unbind();
+		VertexArrayObject.unbind();
 		// TODO Wrap this in some Render/Window call so it can poll properties
 		glEnable(GL_CULL_FACE);
 		glEnable(GL_DEPTH_TEST);

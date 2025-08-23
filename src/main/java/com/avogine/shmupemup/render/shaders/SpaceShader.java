@@ -4,8 +4,8 @@ import static com.avogine.util.resource.ResourceConstants.SHADERS;
 
 import org.lwjgl.opengl.*;
 
-import com.avogine.render.shader.ShaderProgram;
-import com.avogine.render.shader.uniform.UniformMat4;
+import com.avogine.render.opengl.shader.ShaderProgram;
+import com.avogine.render.opengl.shader.uniform.UniformMat4;
 
 /**
  *

@@ -1,7 +1,7 @@
 package com.avogine.shmupemup.render.shaders;
 
-import com.avogine.render.shader.ShaderProgram;
-import com.avogine.render.shader.uniform.UniformMat4;
+import com.avogine.render.opengl.shader.ShaderProgram;
+import com.avogine.render.opengl.shader.uniform.UniformMat4;
 import com.avogine.util.resource.ResourceConstants;
 
 public class SceneDepthShader extends ShaderProgram {

@@ -55,15 +55,14 @@ public class PlanetRender {
 			normalMatrix.invert().transpose();
 			planetShader.normalMatrix.loadMatrix(normalMatrix);
 			
-			planet.getModel().getMaterials()
-			.forEach(material -> {
+			planet.getModel().getBlinnPhongMaterials().forEach(material -> {
 				Texture diffuseTexture = scene.getTextureCache().getCubemap(material.getDiffuseTexturePath(), "png");
 				if (diffuseTexture != null) {
 					glActiveTexture(GL_TEXTURE0);
 					diffuseTexture.bind();
 				}
 				
-				material.getMeshes().forEach(mesh -> {
+				material.getStaticMeshes().forEach(mesh -> {
 					mesh.bind();
 					mesh.draw();
 				});
@@ -81,7 +80,7 @@ public class PlanetRender {
 //			});
 		});
 		
-		VAO.unbind();
+		VertexArrayObject.unbind();
 		
 		planetShader.unbind();
 	}
