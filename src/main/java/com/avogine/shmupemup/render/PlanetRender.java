@@ -5,6 +5,7 @@ import static org.lwjgl.opengl.GL13.*;
 import org.joml.*;
 
 import com.avogine.render.opengl.*;
+import com.avogine.render.opengl.model.mesh.Mesh;
 import com.avogine.shmupemup.render.shaders.PlanetShader;
 import com.avogine.shmupemup.scene.SpaceScene;
 
@@ -62,10 +63,7 @@ public class PlanetRender {
 					diffuseTexture.bind();
 				}
 				
-				material.getStaticMeshes().forEach(mesh -> {
-					mesh.bind();
-					mesh.draw();
-				});
+				material.getStaticMeshes().forEach(Mesh::render);
 			});
 //			planet.getModel().getMaterials().forEach(material -> {
 //				glActiveTexture(GL_TEXTURE0);
@@ -80,7 +78,7 @@ public class PlanetRender {
 //			});
 		});
 		
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		planetShader.unbind();
 	}

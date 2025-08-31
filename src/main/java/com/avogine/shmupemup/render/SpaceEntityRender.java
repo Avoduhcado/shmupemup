@@ -110,8 +110,7 @@ public class SpaceEntityRender {
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		shader.lightPosition.loadVec3(lightPosition);
 		
-		scene.getStaticModels().stream()
-		.forEach(model -> {
+		scene.getStaticModels().stream().forEach(model -> {
 			List<SpaceEntity> entities = scene.getSpaceEntities()
 					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 					.toList();
@@ -131,22 +130,18 @@ public class SpaceEntityRender {
 				specularMap.bind();
 				shader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getStaticMeshes().forEach(mesh -> {
-					mesh.bind();
-					
-					entities.forEach(entity -> {
+				material.getStaticMeshes().forEach(mesh ->
+					mesh.render(entities, entity -> {
 						shader.model.loadMatrix(entity.getModelMatrix());
 						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
 						modelViewMatrix.invert().transpose(normalMatrix);
 						shader.normalMatrix.loadMatrix(normalMatrix);
-						
-						mesh.draw();
-					});
-				});
+					})
+				);
 			});
 		});
 
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		shader.unbind();
 	}
@@ -185,10 +180,8 @@ public class SpaceEntityRender {
 				specularMap.bind();
 				animShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getAnimatedMeshes().forEach(mesh -> {
-					mesh.bind();
-					
-					entities.forEach(entity -> {
+				material.getAnimatedMeshes().forEach(mesh -> 
+					mesh.render(entities, entity -> {
 						AnimationData animationData = entity.getAnimationData();
 						if (animationData == null) {
 							animShader.boneMatrices.loadMatrixArray(DEFAULT_BONES_MATRICES);
@@ -200,14 +193,12 @@ public class SpaceEntityRender {
 						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
 						modelViewMatrix.invert().transpose(normalMatrix);
 						animShader.normalMatrix.loadMatrix(normalMatrix);
-						
-						mesh.draw();
-					});
-				});
+					})
+				);
 			});
 		});
 
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		animShader.unbind();
 	}
@@ -226,16 +217,13 @@ public class SpaceEntityRender {
 					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 					.toList();
 
-			model.getMaterials().forEach(material -> getBoundableMeshesFromMaterial(material).forEach(mesh -> {
-				mesh.bind();
-				entities.forEach(entity -> {
-					depthShader.modelMatrix.loadMatrix(entity.getModelMatrix());
-					mesh.draw();
-				});
-			}));
+			model.getMaterials().forEach(
+					material -> getBoundableMeshesFromMaterial(material).forEach(
+							mesh -> mesh.render(entities, 
+									entity -> depthShader.modelMatrix.loadMatrix(entity.getModelMatrix()))));
 		});
 
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		FBO.unbind();
 		depthShader.unbind();
 	}
@@ -258,12 +246,12 @@ public class SpaceEntityRender {
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		instanceShader.lightPosition.loadVec3(lightPosition);
 
-		scene.getStaticInstancedModels().forEach(model -> {
+		scene.getStaticInstancedModels().forEach(model ->
 //			List<SpaceEntity> instanceEntities = scene.getSpaceEntities()
 //					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 //					.toList();
 
-			model.getBlinnPhongMaterials().forEach(material ->  {
+			model.getBlinnPhongMaterials().forEach(material -> {
 				glActiveTexture(GL_TEXTURE0);
 				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
@@ -278,14 +266,11 @@ public class SpaceEntityRender {
 				specularMap.bind();
 				instanceShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getInstancedMeshes().forEach(mesh -> {
-					mesh.bind();
-					mesh.draw();
-				});
-			});
-		});
+				material.getInstancedMeshes().forEach(Mesh::render);
+			})
+		);
 		
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		instanceShader.unbind();
 	}
@@ -308,20 +293,12 @@ public class SpaceEntityRender {
 				if (material instanceof EmissiveMaterial emissiveMaterial) {
 					neonShader.objectColor.loadVec4(emissiveMaterial.getEmissive());
 
-					material.getStaticMeshes().forEach(mesh -> {
-						mesh.bind();
-
-						laserEntities.forEach(laser -> {
-							neonShader.modelMatrix.loadMatrix(laser.getModelMatrix());
-
-							mesh.draw();
-						});
-					});
+					material.getStaticMeshes().forEach(mesh -> mesh.render(laserEntities, laser -> neonShader.modelMatrix.loadMatrix(laser.getModelMatrix())));
 				}
 			});
 		});
 		
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		neonShader.unbind();
 	}
@@ -357,7 +334,6 @@ public class SpaceEntityRender {
 			positions.flip();
 			colors.flip();
 			
-			particleEmitter.getParticleMesh().bind();
 			particleEmitter.getParticleMesh().update(positions, colors);
 		} finally {
 			MemoryUtil.memFree(positions);
@@ -365,7 +341,7 @@ public class SpaceEntityRender {
 		}
 		
 		particleEmitter.getParticleMesh().draw();
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		
 		particleShader.unbind();
 		glDisable(GL_BLEND);

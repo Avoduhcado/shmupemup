@@ -3,13 +3,12 @@ package com.avogine.shmupemup.render;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL13.*;
 import static org.lwjgl.opengl.GL15.GL_STREAM_DRAW;
-import static org.lwjgl.opengl.GL30.*;
+import static org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0;
 
-import java.lang.Math;
 import java.nio.FloatBuffer;
-import java.util.function.Function;
 
 import org.joml.*;
+import org.joml.Math;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.system.MemoryUtil;
 
@@ -18,8 +17,7 @@ import com.avogine.render.image.ImageData;
 import com.avogine.render.image.data.PixelBuffer;
 import com.avogine.render.opengl.*;
 import com.avogine.render.opengl.Texture.*;
-import com.avogine.render.opengl.VertexArrayObject.*;
-import com.avogine.render.opengl.VertexArrayObject.VertexAttrib.Format;
+import com.avogine.render.opengl.VAO.VAOBuilder.VertexAttrib;
 import com.avogine.render.opengl.model.mesh.StaticMesh;
 import com.avogine.render.opengl.model.util.ParShapesLoader;
 import com.avogine.shmupemup.render.shaders.*;
@@ -30,16 +28,6 @@ import com.avogine.shmupemup.render.shaders.*;
  * TODO Draw a default star map to a cubemap texture but dynamically render stars on every update loop so that they remain properly rotated relative to the camera.
  */
 public class StarmapRender {
-
-	private static final Function<FloatBuffer, Builder> STAR_VAO = vertexData -> {
-		try (var builder = new VertexArrayObject.Builder()) {
-			return builder
-					.buffer(VertexBufferObject.arrayBufferWithUsage(GL_STREAM_DRAW, vertexData))
-					.attrib(VertexAttrib.array(0).pointer(Format.tightlyPackedUnnormalizedFloat(3)));
-		} finally {
-			MemoryUtil.memFree(vertexData);
-		}
-	};
 	
 	private StarmapShader starmapShader;
 	
@@ -68,21 +56,21 @@ public class StarmapRender {
 		float starDistance = starHalf * 2;
 		int starsToRender = 1500;
 		
+		Random random = new Random();
+		
 		FloatBuffer vertexData = MemoryUtil.memAllocFloat(starsToRender * 3);
 		for (int i = 0; i < starsToRender; i++) {
 			// Load up random XYZ coordinate for each star
-			vertexData.put((float) ((Math.random() * starDistance) - starHalf))
-			.put((float) ((Math.random() * starDistance) - starHalf))
-			.put((float) ((Math.random() * starDistance) - starHalf));
+			vertexData.put((random.nextFloat() * starDistance) - starHalf)
+			.put((random.nextFloat() * starDistance) - starHalf)
+			.put((random.nextFloat() * starDistance) - starHalf);
 		}
 		vertexData.flip();
 		
-		var starVAO = new VertexArrayObject(STAR_VAO.apply(vertexData)) {
-			@Override
-			public void draw() {
-				glDrawArrays(GL_POINTS, 0, starsToRender);
-			}
-		};
+		var starVAO = VAO.gen(vertexArray -> vertexArray
+				.bindBufferData(new VBO(GL_STREAM_DRAW), vertexData)
+				.enablePointer(0, VertexAttrib.Format.tightlyPackedUnnormalizedFloat(3)));
+		MemoryUtil.memFree(vertexData);
 		
 		int cubemapSize = 4096;
 		var cubemapImage2D = new ImageData(cubemapSize, cubemapSize, GL_RGBA, new PixelBuffer(null));
@@ -96,7 +84,7 @@ public class StarmapRender {
 						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, Image2D.from(cubemapImage2D)),
 						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, Image2D.from(cubemapImage2D)));
 		
-		Matrix4f projection = new Matrix4f().setPerspective((float) Math.toRadians(90f), 1f, 0.1f, starDistance);
+		Matrix4f projection = new Matrix4f().setPerspective(Math.toRadians(90f), 1f, 0.1f, starDistance);
 		Matrix4f view = new Matrix4f();
 		
 		int[] viewport = new int[4];
@@ -122,11 +110,11 @@ public class StarmapRender {
 			orientView(view, i);
 			spaceShader.view.loadMatrix(view);
 
-			starVAO.draw();
+			glDrawArrays(GL_POINTS, 0, starsToRender);
 		}
 
 		FBO.unbind();
-		VertexArrayObject.unbind();
+		VAO.unbind();
 		// TODO Wrap this in some Render/Window call so it can poll properties
 		glEnable(GL_CULL_FACE);
 		glEnable(GL_DEPTH_TEST);
@@ -153,12 +141,12 @@ public class StarmapRender {
 	private void orientView(Matrix4f view, int direction) {
 		view.setLookAlong(new Vector3f(0, 0, 1), new Vector3f(0, 1, 0));
 		switch (direction) {
-			case 0 -> view.rotateY((float) Math.toRadians(90));
-			case 1 -> view.rotateY((float) Math.toRadians(-90));
-			case 2 -> view.rotateX((float) Math.toRadians(-90));
-			case 3 -> view.rotateX((float) Math.toRadians(90));
+			case 0 -> view.rotateY(Math.toRadians(90));
+			case 1 -> view.rotateY(Math.toRadians(-90));
+			case 2 -> view.rotateX(Math.toRadians(-90));
+			case 3 -> view.rotateX(Math.toRadians(90));
 			case 4 -> { /* Direction defaults to 4 (Positive Z) */}
-			case 5 -> view.rotateY((float) Math.toRadians(180));
+			case 5 -> view.rotateY(Math.toRadians(180));
 			default -> throw new IllegalArgumentException("Cannot orient view in direction: " + direction);
 		}
 	}
@@ -180,9 +168,8 @@ public class StarmapRender {
 		glActiveTexture(GL_TEXTURE0);
 		starCubemap.bind();
 
-		starCube.bind();
-		starCube.draw();
-		glBindVertexArray(0);
+		starCube.render();
+		VAO.unbind();
 		
 		glDepthFunc(GL_LESS);
 		glCullFace(GL_BACK);

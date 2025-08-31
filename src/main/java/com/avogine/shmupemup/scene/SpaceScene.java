@@ -7,7 +7,7 @@ import static org.lwjgl.system.MemoryUtil.*;
 import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.Random;
-import java.util.stream.Stream;
+import java.util.stream.*;
 
 import org.joml.*;
 import org.joml.Math;
@@ -28,8 +28,10 @@ import com.avogine.render.opengl.model.Model;
 import com.avogine.render.opengl.model.material.SimpleMaterial;
 import com.avogine.render.opengl.model.material.data.BlinnPhongData;
 import com.avogine.render.opengl.model.mesh.*;
-import com.avogine.render.opengl.model.mesh.data.*;
+import com.avogine.render.opengl.model.mesh.data.MeshData;
 import com.avogine.render.opengl.model.util.*;
+import com.avogine.render.opengl.particle.ParticleMesh;
+import com.avogine.render.opengl.particle.data.ParticleVertexData;
 import com.avogine.shmupemup.game.scene.particles.SpaceshipParticleEmitter;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.scene.entities.*;
@@ -114,10 +116,10 @@ public class SpaceScene extends Scene {
 		gasGiantMaterial.addMesh(planetMesh);
 		Model planetModel = new Model(kuromiPlanetModelId, gasGiantMaterial);
 
-		var planetPosition = new Vector3f(1000, 1200, -3500);
+		var planetPosition = new Vector3f(1000, 2200, -6500);
 		var axisAngle = new AxisAngle4f(Math.toRadians(-75), 1, 0, 0);
 		
-		var planet = new Planet(planetPosition, axisAngle, 500f, planetModel);
+		var planet = new Planet(planetPosition, axisAngle, 1500f, planetModel);
 		addEntity(planet);
 		
 //		planetPosition = new Vector3f(-1000, 600, -3500);
@@ -173,7 +175,7 @@ public class SpaceScene extends Scene {
 					memAllocInt(parMesh.ntriangles() * 3).put(parMesh.triangles(parMesh.ntriangles() * 3)).flip());
 			var instancedBuffers = new InstancedBuffers(instanceMatrices, instanceNormals);
 			try {
-				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf()), new InstancedData(instancedBuffers, instanceCount));
+				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1, instancedBuffers, instanceCount));
 			} finally {
 				ParShapes.par_shapes_free_mesh(parMesh);
 			}
@@ -250,16 +252,18 @@ public class SpaceScene extends Scene {
 			var rockModelViewMatrix = new Matrix4f();
 			var rockNormalMatrix = new Matrix4f();
 
-			instanceRockMesh.bind();
-			for (int j = 0; j < 1000; j++) {
-				var rock = new SpaceEntity(
-						new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
-						new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
-						(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
-						instanceRockId,
-						new Body(instanceRockBody));
+			List<SpaceEntity> rocks = IntStream.range(0, 1000)
+					.mapToObj(j -> new SpaceEntity(
+							new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
+							new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
+							(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
+							instanceRockId,
+							new Body(instanceRockBody)))
+					.toList();
+			
+			instanceRockMesh.update(rocks, (rock, index) -> {
 				addEntity(rock);
-
+				
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					FloatBuffer instanceMatrix = stack.mallocFloat(16);
 					FloatBuffer instanceNormal = stack.mallocFloat(16);
@@ -269,11 +273,12 @@ public class SpaceScene extends Scene {
 					rockModelViewMatrix.invert().transpose(rockNormalMatrix);
 					rockNormalMatrix.get(instanceNormal);
 
-					instanceRockMesh.updateInstanceBuffer(5, j * 16L * Float.BYTES, instanceMatrix);
-					instanceRockMesh.updateInstanceBuffer(6, j * 16L * Float.BYTES, instanceNormal);
+					instanceRockMesh.updateInstanceBuffer(5, index * 16L * Float.BYTES, instanceMatrix);
+					instanceRockMesh.updateInstanceBuffer(6, index * 16L * Float.BYTES, instanceNormal);
 				}
-			}
-			VertexArrayObject.unbind();
+			});
+			
+			VAO.unbind();
 		}
 	}
 	
