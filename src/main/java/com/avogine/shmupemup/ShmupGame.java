@@ -15,9 +15,9 @@ import com.avogine.game.ui.NuklearGUI;
 import com.avogine.io.Window;
 import com.avogine.io.config.WindowPreferences;
 import com.avogine.io.listener.WindowResizeListener;
-import com.avogine.render.*;
-import com.avogine.render.font.FontCache;
 import com.avogine.render.opengl.font.Font;
+import com.avogine.render.opengl.font.util.FontCache;
+import com.avogine.render.opengl.ui.*;
 import com.avogine.shmupemup.game.*;
 
 /**
@@ -127,6 +127,7 @@ public class ShmupGame implements Game, StateSwappable<SpaceGameState<?, ?>>, Wi
 
 	@Override
 	public void render(Window window) {
+		window.makeCurrent();
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glViewport(0, 0, window.getFbWidth(), window.getFbHeight());
 		

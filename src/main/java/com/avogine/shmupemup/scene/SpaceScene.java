@@ -7,7 +7,7 @@ import static org.lwjgl.system.MemoryUtil.*;
 import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.Random;
-import java.util.stream.Stream;
+import java.util.stream.*;
 
 import org.joml.*;
 import org.joml.Math;
@@ -21,13 +21,16 @@ import com.avogine.game.scene.*;
 import com.avogine.io.Window;
 import com.avogine.logging.AvoLog;
 import com.avogine.render.model.mesh.data.*;
-import com.avogine.render.model.util.ParShapesBuilder;
-import com.avogine.render.opengl.*;
-import com.avogine.render.opengl.image.util.TextureCache;
-import com.avogine.render.opengl.model.*;
+import com.avogine.render.opengl.VAO;
+import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.material.SimpleMaterial;
+import com.avogine.render.opengl.model.material.data.BlinnPhongData;
 import com.avogine.render.opengl.model.mesh.*;
-import com.avogine.render.opengl.model.mesh.data.*;
 import com.avogine.render.opengl.model.util.*;
+import com.avogine.render.opengl.particle.ParticleMesh;
+import com.avogine.render.opengl.texture.Texture;
+import com.avogine.render.opengl.texture.util.*;
+import com.avogine.render.util.ParShapesBuilder;
 import com.avogine.shmupemup.game.scene.particles.SpaceshipParticleEmitter;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.scene.entities.*;
@@ -105,17 +108,17 @@ public class SpaceScene extends Scene {
 	private void initPlanets() {
 		String kuromiTexturePath = TEXTURES.with("kuromi");
 		textureCache.getCubemap(kuromiTexturePath, "png");
-		var gasGiantMaterial = new Material(kuromiTexturePath);
+		var gasGiantMaterial = new SimpleMaterial(new BlinnPhongData(kuromiTexturePath));
 
 		String kuromiPlanetModelId = "kuromiPlanet";
-		Mesh planetMesh = ParShapesLoader.loadFromBuilder(builder -> builder.createSphere(4).build(ParShapesLoader.STATIC_MESH_BUILDER));
-		gasGiantMaterial.getMeshes().add(planetMesh);
+		StaticMesh planetMesh = ParShapesLoader.loadFromBuilder(builder -> builder.createSphere(4).build(ParShapesLoader.STATIC_MESH_BUILDER));
+		gasGiantMaterial.addMesh(planetMesh);
 		Model planetModel = new Model(kuromiPlanetModelId, gasGiantMaterial);
 
-		var planetPosition = new Vector3f(1000, 1200, -3500);
+		var planetPosition = new Vector3f(1000, 2200, -6500);
 		var axisAngle = new AxisAngle4f(Math.toRadians(-75), 1, 0, 0);
 		
-		var planet = new Planet(planetPosition, axisAngle, 500f, planetModel);
+		var planet = new Planet(planetPosition, axisAngle, 1500f, planetModel);
 		addEntity(planet);
 		
 //		planetPosition = new Vector3f(-1000, 600, -3500);
@@ -128,7 +131,7 @@ public class SpaceScene extends Scene {
 	
 	private void initAsteroidBelt(Planet planet) {
 		var instancedRockMesh = new ParShapesBuilder().createRock(random.nextInt(), 2).build(parMesh -> {
-			int instanceCount = 10000;
+			int instanceCount = 50000;
 			FloatBuffer instanceMatrices = MemoryUtil.memAllocFloat(instanceCount * 16);
 			FloatBuffer instanceNormals = MemoryUtil.memAllocFloat(instanceCount * 16);
 
@@ -171,13 +174,17 @@ public class SpaceScene extends Scene {
 					memAllocInt(parMesh.ntriangles() * 3).put(parMesh.triangles(parMesh.ntriangles() * 3)).flip());
 			var instancedBuffers = new InstancedBuffers(instanceMatrices, instanceNormals);
 			try {
-				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1), new InstancedData(instancedBuffers, instanceCount));
+				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1, instancedBuffers, instanceCount));
 			} finally {
 				ParShapes.par_shapes_free_mesh(parMesh);
 			}
 		});
-		var rockMaterial = new Material(new Vector4f(0.5f, 0.5f, 0.5f, 1.0f));
-		rockMaterial.getMeshes().add(instancedRockMesh);
+		String asteroidTextureID = "asteroid";
+		textureCache.putTexture(asteroidTextureID, TextureLoader.loadRawTexture(32, 32, (byte) 128, (byte) 128, (byte) 128, (byte) 255));
+		String asteroidSpecularID = "asteroidSpec";
+		textureCache.putTexture(asteroidSpecularID, TextureLoader.loadRawTexture(32, 32, (byte) 0, (byte) 0, (byte) 0, (byte) 255));
+		var rockMaterial = new SimpleMaterial(asteroidTextureID, asteroidSpecularID, 2);
+		rockMaterial.addMesh(instancedRockMesh);
 		var instancedRockModel = new Model(planet.getModel().getId() + "-ring", rockMaterial);
 		instancedModels.add(instancedRockModel);
 	}
@@ -207,19 +214,19 @@ public class SpaceScene extends Scene {
 		Texture particleTexture = textureCache.getTexture(TEXTURES.with("particle.png"));
 		
 		var positions = ShapeUtils.mallocCircleVertices(0.5f, 18);
-		var particleMesh = new ParticleMesh(new ParticleMeshData(positions, maxParticleCount));
+		var particleMesh = new ParticleMesh(positions, maxParticleCount);
 		spaceshipParticleEmitter = new SpaceshipParticleEmitter(player, particleMesh, particleTexture);
 	}
 	
 	private void initLasers() {
 		String laserModelId = "laser";
 		var neonMaterial = new EmissiveMaterial(new Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-		Mesh bulletMesh = ParShapesLoader.loadFromBuilder(builder -> builder
+		StaticMesh bulletMesh = ParShapesLoader.loadFromBuilder(builder -> builder
 				.createCapsule()
 				.scale(0.2f, 0.2f, 0.2f)
 				.rotate((float) toRadians(90), new float[] {1, 0, 0})
 				.build(ParShapesLoader.STATIC_MESH_BUILDER));
-		neonMaterial.getMeshes().add(bulletMesh);
+		neonMaterial.addMesh(bulletMesh);
 		var bulletModel = new Model(laserModelId, neonMaterial);
 		staticModels.add(bulletModel);
 		
@@ -232,10 +239,10 @@ public class SpaceScene extends Scene {
 		float asteroidFieldMax = 1500f;
 		
 		for (int i = 0; i < 5; i++) {
-			var rockMaterial = new Material(new Vector4f(0.5f, 0.5f, 0.5f, 1.0f));
+			var rockMaterial = new SimpleMaterial("asteroid", "asteroidSpec", 2);
 			String instanceRockId = "irock" + i;
 			InstancedMesh instanceRockMesh = ParShapesLoader.loadInstancedBuilder(new ParShapesBuilder().createRock(random.nextInt(), 1), 100);
-			rockMaterial.getMeshes().add(instanceRockMesh);
+			rockMaterial.addMesh(instanceRockMesh);
 			var instanceRockModel = new Model(instanceRockId, rockMaterial);
 			instancedModels.add(instanceRockModel);
 			//var instanceRockBody =  new BodyConstraints(new AABBf(instanceRockMesh.getAabbMin(), instanceRockMesh.getAabbMax()), 0x0, 0x0); // TODO Do instanced rocks need accurate AABBs?
@@ -244,16 +251,18 @@ public class SpaceScene extends Scene {
 			var rockModelViewMatrix = new Matrix4f();
 			var rockNormalMatrix = new Matrix4f();
 
-			instanceRockMesh.bind();
-			for (int j = 0; j < 1000; j++) {
-				var rock = new SpaceEntity(
-						new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
-						new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
-						(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
-						instanceRockId,
-						new Body(instanceRockBody));
+			List<SpaceEntity> rocks = IntStream.range(0, 1000)
+					.mapToObj(j -> new SpaceEntity(
+							new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
+							new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
+							(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
+							instanceRockId,
+							new Body(instanceRockBody)))
+					.toList();
+			
+			instanceRockMesh.update(rocks, (rock, index) -> {
 				addEntity(rock);
-
+				
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					FloatBuffer instanceMatrix = stack.mallocFloat(16);
 					FloatBuffer instanceNormal = stack.mallocFloat(16);
@@ -263,10 +272,11 @@ public class SpaceScene extends Scene {
 					rockModelViewMatrix.invert().transpose(rockNormalMatrix);
 					rockNormalMatrix.get(instanceNormal);
 
-					instanceRockMesh.updateInstanceBuffer(5, j * 16L * Float.BYTES, instanceMatrix);
-					instanceRockMesh.updateInstanceBuffer(6, j * 16L * Float.BYTES, instanceNormal);
+					instanceRockMesh.updateInstanceBuffer(5, index * 16L * Float.BYTES, instanceMatrix);
+					instanceRockMesh.updateInstanceBuffer(6, index * 16L * Float.BYTES, instanceNormal);
 				}
-			}
+			});
+			
 			VAO.unbind();
 		}
 	}

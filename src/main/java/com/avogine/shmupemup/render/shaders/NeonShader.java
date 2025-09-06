@@ -2,8 +2,8 @@ package com.avogine.shmupemup.render.shaders;
 
 import static com.avogine.util.resource.ResourceConstants.SHADERS;
 
-import com.avogine.render.shader.ShaderProgram;
-import com.avogine.render.shader.uniform.*;
+import com.avogine.render.opengl.shader.ShaderProgram;
+import com.avogine.render.opengl.shader.uniform.*;
 
 /**
  *

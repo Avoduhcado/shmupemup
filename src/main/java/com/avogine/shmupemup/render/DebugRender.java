@@ -7,10 +7,14 @@ import static org.lwjgl.opengl.GL30.*;
 
 import java.nio.FloatBuffer;
 import java.util.*;
+import java.util.stream.Stream;
 
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
 
+import com.avogine.render.model.mesh.Boundable;
+import com.avogine.render.opengl.model.material.Material;
+import com.avogine.render.opengl.model.mesh.Mesh;
 import com.avogine.shmupemup.render.shaders.WireframeShader;
 import com.avogine.shmupemup.scene.SpaceScene;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
@@ -132,7 +136,7 @@ public class DebugRender {
 			model.getMaterials().forEach(material -> {
 				shader.wireframeColor.loadVec4(1.0f, 1.0f, 0.0f, 1.0f);
 				
-				material.getMeshes().forEach(mesh -> entities.forEach(entity -> {
+				getBoundableMeshesFromMaterial(material).forEach(mesh -> entities.forEach(entity -> {
 					var aabb = entity.getWorldCollider();
 					try (MemoryStack stack = MemoryStack.stackPush()) {
 						FloatBuffer positionsBuffer = stack.mallocFloat(8 * 3);
@@ -189,6 +193,11 @@ public class DebugRender {
 		glEnable(GL_CULL_FACE);
 		
 		shader.unbind();
+	}
+	
+	@SuppressWarnings("unchecked")
+	private <T extends Mesh & Boundable> Stream<T> getBoundableMeshesFromMaterial(Material material) {
+		return (Stream<T>) Stream.concat(material.getStaticMeshes().stream(), material.getAnimatedMeshes().stream());
 	}
 	
 }

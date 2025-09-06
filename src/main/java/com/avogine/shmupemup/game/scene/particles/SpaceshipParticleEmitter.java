@@ -7,8 +7,8 @@ import org.joml.Random;
 import org.joml.Vector3f;
 
 import com.avogine.game.scene.particles.ParticleEmitter;
-import com.avogine.render.opengl.Texture;
-import com.avogine.render.opengl.model.mesh.ParticleMesh;
+import com.avogine.render.opengl.particle.ParticleMesh;
+import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**

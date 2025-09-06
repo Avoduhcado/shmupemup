@@ -1,20 +1,23 @@
 package com.avogine.shmupemup.render;
 
 import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL13.*;
 
 import java.nio.*;
 import java.util.*;
+import java.util.stream.Stream;
 
 import org.joml.*;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryUtil;
 
 import com.avogine.entity.AnimationData;
+import com.avogine.render.model.mesh.Boundable;
 import com.avogine.render.opengl.*;
+import com.avogine.render.opengl.model.material.Material;
 import com.avogine.render.opengl.model.mesh.Mesh;
 import com.avogine.render.opengl.model.util.ModelLoader;
-import com.avogine.render.shader.*;
+import com.avogine.render.opengl.shader.*;
+import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.render.shaders.*;
 import com.avogine.shmupemup.scene.SpaceScene;
@@ -75,10 +78,9 @@ public class SpaceEntityRender {
 		try {
 			depthFBO = FBO.gen().bind();
 
-			depthTexture = Texture.gen().bind()
-					.filterLinear()
-					.texImage2D(GL14.GL_DEPTH_COMPONENT32, 1280, 720, GL11.GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null);
-			Texture.unbind();
+			depthTexture = Texture.gen2D(depth -> depth
+					.texFilterLinear()
+					.texImage2D(GL14.GL_DEPTH_COMPONENT32, 1280, 720, GL11.GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null));
 
 			depthFBO.attachTexture2D(GL30.GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture.id(), 0)
 			.validate();
@@ -100,47 +102,39 @@ public class SpaceEntityRender {
 		
 		shader.bind();
 		
-		shader.projectionMatrix.loadMatrix(scene.getProjectionMatrix());
-		shader.viewMatrix.loadMatrix(scene.getViewMatrix());
-		scene.getCamera().getInvertedView().getTranslation(viewMatrixPosition);
-		shader.viewPosition.loadVec3(viewMatrixPosition);
+		shader.projection.loadMatrix(scene.getProjectionMatrix());
+		shader.view.loadMatrix(scene.getViewMatrix());
 		
 		shader.lightColor.loadVec3(0.5f, 0.5f, 0.5f);
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		shader.lightPosition.loadVec3(lightPosition);
 		
-		scene.getStaticModels().stream()
-		.forEach(model -> {
+		scene.getStaticModels().stream().forEach(model -> {
 			List<SpaceEntity> entities = scene.getSpaceEntities()
 					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 					.toList();
 			
-			model.getMaterials().forEach(material -> {
-				if (material instanceof EmissiveMaterial) {
-					return;
-				}
-				shader.objectColor.loadVec3(material.getDiffuseColor().x(), material.getDiffuseColor().y(), material.getDiffuseColor().z());
+			model.getBlinnPhongMaterials().forEach(material -> {
+				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
-					shader.hasTexture.loadBoolean(true);
-					glActiveTexture(GL_TEXTURE0);
-					Texture diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
-					diffuseTexture.bind();
-				} else {
-					shader.hasTexture.loadBoolean(false);
+					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
 				}
+				diffuseTexture.activate(0);
+				Texture specularMap = scene.getTextureCache().getDefaultTexture();
+				if (material.getSpecularMapPath() != null) {
+					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
+				}
+				specularMap.activate(1);
+				shader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getMeshes().forEach(mesh -> {
-					mesh.bind();
-					
-					entities.forEach(entity -> {
-						shader.modelMatrix.loadMatrix(entity.getModelMatrix());
+				material.getStaticMeshes().forEach(mesh ->
+					mesh.render(entities, entity -> {
+						shader.model.loadMatrix(entity.getModelMatrix());
 						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
 						modelViewMatrix.invert().transpose(normalMatrix);
 						shader.normalMatrix.loadMatrix(normalMatrix);
-						
-						mesh.draw();
-					});
-				});
+					})
+				);
 			});
 		});
 
@@ -155,10 +149,8 @@ public class SpaceEntityRender {
 	public void renderAnimations(SpaceScene scene) {
 		animShader.bind();
 		
-		animShader.projectionMatrix.loadMatrix(scene.getProjectionMatrix());
-		animShader.viewMatrix.loadMatrix(scene.getViewMatrix());
-		scene.getCamera().getInvertedView().getTranslation(viewMatrixPosition);
-		animShader.viewPosition.loadVec3(viewMatrixPosition);
+		animShader.projection.loadMatrix(scene.getProjectionMatrix());
+		animShader.view.loadMatrix(scene.getViewMatrix());
 		
 		animShader.lightColor.loadVec3(0.5f, 0.5f, 0.5f);
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
@@ -170,24 +162,21 @@ public class SpaceEntityRender {
 					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 					.toList();
 			
-			model.getMaterials().forEach(material -> {
-				if (material instanceof EmissiveMaterial) {
-					return;
-				}
-				animShader.objectColor.loadVec3(material.getDiffuseColor().x(), material.getDiffuseColor().y(), material.getDiffuseColor().z());
+			model.getBlinnPhongMaterials().forEach(material -> {
+				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
-					animShader.hasTexture.loadBoolean(true);
-					glActiveTexture(GL_TEXTURE0);
-					Texture diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
-					diffuseTexture.bind();
-				} else {
-					animShader.hasTexture.loadBoolean(false);
+					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
 				}
+				diffuseTexture.activate(0);
+				Texture specularMap = scene.getTextureCache().getDefaultTexture();
+				if (material.getSpecularMapPath() != null) {
+					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
+				}
+				specularMap.activate(1);
+				animShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getMeshes().forEach(mesh -> {
-					mesh.bind();
-					
-					entities.forEach(entity -> {
+				material.getAnimatedMeshes().forEach(mesh -> 
+					mesh.render(entities, entity -> {
 						AnimationData animationData = entity.getAnimationData();
 						if (animationData == null) {
 							animShader.boneMatrices.loadMatrixArray(DEFAULT_BONES_MATRICES);
@@ -195,14 +184,12 @@ public class SpaceEntityRender {
 							animShader.boneMatrices.loadMatrixArray(animationData.getCurrentFrame().boneMatrices());
 						}
 						
-						animShader.modelMatrix.loadMatrix(entity.getModelMatrix());
+						animShader.model.loadMatrix(entity.getModelMatrix());
 						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
 						modelViewMatrix.invert().transpose(normalMatrix);
 						animShader.normalMatrix.loadMatrix(normalMatrix);
-						
-						mesh.draw();
-					});
-				});
+					})
+				);
 			});
 		});
 
@@ -225,19 +212,20 @@ public class SpaceEntityRender {
 					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
 					.toList();
 
-			model.getMaterials().forEach(material -> material.getMeshes().forEach(mesh -> {
-				mesh.bind();
-
-				entities.forEach(entity -> {
-					depthShader.modelMatrix.loadMatrix(entity.getModelMatrix());
-					mesh.draw();
-				});
-			}));
+			model.getMaterials().forEach(
+					material -> getBoundableMeshesFromMaterial(material).forEach(
+							mesh -> mesh.render(entities, 
+									entity -> depthShader.modelMatrix.loadMatrix(entity.getModelMatrix()))));
 		});
 
 		VAO.unbind();
 		FBO.unbind();
 		depthShader.unbind();
+	}
+	
+	@SuppressWarnings("unchecked")
+	private <T extends Mesh & Boundable> Stream<T> getBoundableMeshesFromMaterial(Material material) {
+		return (Stream<T>) Stream.concat(material.getStaticMeshes().stream(), material.getAnimatedMeshes().stream());
 	}
 	
 	/**
@@ -246,27 +234,34 @@ public class SpaceEntityRender {
 	public void renderInstances(SpaceScene scene) {
 		instanceShader.bind();
 		
-		instanceShader.projectionMatrix.loadMatrix(scene.getProjectionMatrix());
-		instanceShader.viewMatrix.loadMatrix(scene.getViewMatrix());
-		scene.getCamera().getInvertedView().getTranslation(viewMatrixPosition);
-		instanceShader.viewPosition.loadVec3(viewMatrixPosition);
+		instanceShader.projection.loadMatrix(scene.getProjectionMatrix());
+		instanceShader.view.loadMatrix(scene.getViewMatrix());
 		
 		instanceShader.lightColor.loadVec3(0.5f, 0.5f, 0.5f);
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		instanceShader.lightPosition.loadVec3(lightPosition);
 
-		instanceShader.hasTexture.loadBoolean(false);
-//		glActiveTexture(GL_TEXTURE0);
-//		glBindTexture(GL_TEXTURE_2D, 0);
-		instanceShader.objectColor.loadVec3(0.5f, 0.5f, 0.5f);
-		
-		scene.getStaticInstancedModels().forEach(model -> {
-			List<SpaceEntity> instanceEntities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
-			
-			model.getMaterials().forEach(material -> material.getMeshes().forEach(Mesh::draw));
-		});
+		scene.getStaticInstancedModels().forEach(model ->
+//			List<SpaceEntity> instanceEntities = scene.getSpaceEntities()
+//					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
+//					.toList();
+
+			model.getBlinnPhongMaterials().forEach(material -> {
+				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
+				if (material.getDiffuseTexturePath() != null) {
+					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
+				}
+				diffuseTexture.activate(0);
+				Texture specularMap = scene.getTextureCache().getDefaultTexture();
+				if (material.getSpecularMapPath() != null) {
+					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
+				}
+				specularMap.activate(1);
+				instanceShader.specularFactor.loadFloat(material.getSpecularFactor());
+				
+				material.getInstancedMeshes().forEach(Mesh::render);
+			})
+		);
 		
 		VAO.unbind();
 		
@@ -288,18 +283,10 @@ public class SpaceEntityRender {
 					.toList();
 
 			model.getMaterials().forEach(material -> {
-				if (material instanceof EmissiveMaterial) {
-					neonShader.objectColor.loadVec4(material.getDiffuseColor());
+				if (material instanceof EmissiveMaterial emissiveMaterial) {
+					neonShader.objectColor.loadVec4(emissiveMaterial.getEmissive());
 
-					material.getMeshes().forEach(mesh -> {
-						mesh.bind();
-
-						laserEntities.forEach(laser -> {
-							neonShader.modelMatrix.loadMatrix(laser.getModelMatrix());
-
-							mesh.draw();
-						});
-					});
+					material.getStaticMeshes().forEach(mesh -> mesh.render(laserEntities, laser -> neonShader.modelMatrix.loadMatrix(laser.getModelMatrix())));
 				}
 			});
 		});
@@ -327,8 +314,7 @@ public class SpaceEntityRender {
 		particleShader.cameraRightWorldspace.loadVec3(scene.getViewMatrix().m00(), scene.getViewMatrix().m10(), scene.getViewMatrix().m20());
 		particleShader.cameraUpWorldspace.loadVec3(scene.getViewMatrix().m01(), scene.getViewMatrix().m11(), scene.getViewMatrix().m21());
 		
-		glActiveTexture(GL_TEXTURE0);
-		particleEmitter.getParticleTexture().bind();
+		particleEmitter.getParticleTexture().activate(0);
 		
 		FloatBuffer positions = MemoryUtil.memAllocFloat(particleEmitter.getParticles().size() * 4);
 		ByteBuffer colors = MemoryUtil.memAlloc(particleEmitter.getParticles().size() * 4);
@@ -346,7 +332,7 @@ public class SpaceEntityRender {
 			MemoryUtil.memFree(colors);
 		}
 		
-		particleEmitter.getParticleMesh().draw();
+		particleEmitter.getParticleMesh().render();
 		VAO.unbind();
 		
 		particleShader.unbind();

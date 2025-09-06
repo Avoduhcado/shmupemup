@@ -1,10 +1,10 @@
 package com.avogine.shmupemup.render;
 
-import static org.lwjgl.opengl.GL13.*;
-
 import org.joml.*;
 
 import com.avogine.render.opengl.*;
+import com.avogine.render.opengl.model.mesh.Mesh;
+import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.render.shaders.PlanetShader;
 import com.avogine.shmupemup.scene.SpaceScene;
 
@@ -55,18 +55,11 @@ public class PlanetRender {
 			normalMatrix.invert().transpose();
 			planetShader.normalMatrix.loadMatrix(normalMatrix);
 			
-			planet.getModel().getMaterials()
-			.forEach(material -> {
+			planet.getModel().getBlinnPhongMaterials().forEach(material -> {
 				Texture diffuseTexture = scene.getTextureCache().getCubemap(material.getDiffuseTexturePath(), "png");
-				if (diffuseTexture != null) {
-					glActiveTexture(GL_TEXTURE0);
-					diffuseTexture.bind();
-				}
+				diffuseTexture.activate(0);
 				
-				material.getMeshes().forEach(mesh -> {
-					mesh.bind();
-					mesh.draw();
-				});
+				material.getStaticMeshes().forEach(Mesh::render);
 			});
 //			planet.getModel().getMaterials().forEach(material -> {
 //				glActiveTexture(GL_TEXTURE0);
