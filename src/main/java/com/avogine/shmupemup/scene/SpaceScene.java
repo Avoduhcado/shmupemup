@@ -21,17 +21,16 @@ import com.avogine.game.scene.*;
 import com.avogine.io.Window;
 import com.avogine.logging.AvoLog;
 import com.avogine.render.model.mesh.data.*;
-import com.avogine.render.model.util.ParShapesBuilder;
-import com.avogine.render.opengl.*;
-import com.avogine.render.opengl.image.util.*;
+import com.avogine.render.opengl.VAO;
 import com.avogine.render.opengl.model.Model;
 import com.avogine.render.opengl.model.material.SimpleMaterial;
 import com.avogine.render.opengl.model.material.data.BlinnPhongData;
 import com.avogine.render.opengl.model.mesh.*;
-import com.avogine.render.opengl.model.mesh.data.MeshData;
 import com.avogine.render.opengl.model.util.*;
 import com.avogine.render.opengl.particle.ParticleMesh;
-import com.avogine.render.opengl.particle.data.ParticleVertexData;
+import com.avogine.render.opengl.texture.Texture;
+import com.avogine.render.opengl.texture.util.*;
+import com.avogine.render.util.ParShapesBuilder;
 import com.avogine.shmupemup.game.scene.particles.SpaceshipParticleEmitter;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.scene.entities.*;
@@ -132,7 +131,7 @@ public class SpaceScene extends Scene {
 	
 	private void initAsteroidBelt(Planet planet) {
 		var instancedRockMesh = new ParShapesBuilder().createRock(random.nextInt(), 2).build(parMesh -> {
-			int instanceCount = 10000;
+			int instanceCount = 50000;
 			FloatBuffer instanceMatrices = MemoryUtil.memAllocFloat(instanceCount * 16);
 			FloatBuffer instanceNormals = MemoryUtil.memAllocFloat(instanceCount * 16);
 
@@ -215,7 +214,7 @@ public class SpaceScene extends Scene {
 		Texture particleTexture = textureCache.getTexture(TEXTURES.with("particle.png"));
 		
 		var positions = ShapeUtils.mallocCircleVertices(0.5f, 18);
-		var particleMesh = new ParticleMesh(new ParticleVertexData(positions, maxParticleCount));
+		var particleMesh = new ParticleMesh(positions, maxParticleCount);
 		spaceshipParticleEmitter = new SpaceshipParticleEmitter(player, particleMesh, particleTexture);
 	}
 	

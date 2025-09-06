@@ -15,8 +15,8 @@ import com.avogine.game.ui.NuklearGUI;
 import com.avogine.io.Window;
 import com.avogine.io.config.WindowPreferences;
 import com.avogine.io.listener.WindowResizeListener;
-import com.avogine.render.font.FontCache;
 import com.avogine.render.opengl.font.Font;
+import com.avogine.render.opengl.font.util.FontCache;
 import com.avogine.render.opengl.ui.*;
 import com.avogine.shmupemup.game.*;
 

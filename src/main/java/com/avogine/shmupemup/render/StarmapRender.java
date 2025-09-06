@@ -1,25 +1,22 @@
 package com.avogine.shmupemup.render;
 
 import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL13.*;
+import static org.lwjgl.opengl.GL13.GL_TEXTURE_CUBE_MAP_POSITIVE_X;
 import static org.lwjgl.opengl.GL15.GL_STREAM_DRAW;
 import static org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0;
 
-import java.nio.FloatBuffer;
+import java.nio.*;
 
 import org.joml.*;
 import org.joml.Math;
-import org.lwjgl.opengl.GL13;
 import org.lwjgl.system.MemoryUtil;
 
 import com.avogine.game.scene.Scene;
-import com.avogine.render.image.ImageData;
-import com.avogine.render.image.data.PixelBuffer;
 import com.avogine.render.opengl.*;
-import com.avogine.render.opengl.Texture.*;
 import com.avogine.render.opengl.VAO.VAOBuilder.VertexAttrib;
 import com.avogine.render.opengl.model.mesh.StaticMesh;
 import com.avogine.render.opengl.model.util.ParShapesLoader;
+import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.render.shaders.*;
 
 /**
@@ -73,16 +70,10 @@ public class StarmapRender {
 		MemoryUtil.memFree(vertexData);
 		
 		int cubemapSize = 4096;
-		var cubemapImage2D = new ImageData(cubemapSize, cubemapSize, GL_RGBA, new PixelBuffer(null));
-		starCubemap = Texture.gen(GL13.GL_TEXTURE_CUBE_MAP).bind()
-				.filterLinear()
-				.wrap3DClampEdge()
-				.tex(Image2DTarget.of(GL_TEXTURE_CUBE_MAP_POSITIVE_X, Image2D.from(cubemapImage2D)),
-						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, Image2D.from(cubemapImage2D)),
-						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, Image2D.from(cubemapImage2D)),
-						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, Image2D.from(cubemapImage2D)),
-						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, Image2D.from(cubemapImage2D)),
-						Image2DTarget.of(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, Image2D.from(cubemapImage2D)));
+		starCubemap = Texture.genCubeMap(cubemap -> cubemap
+				.texFilterLinear()
+				.texWrap3DClampToEdge()
+				.texCubeMap(cubemapSize, cubemapSize, GL_RGBA, (ByteBuffer) null));
 		
 		Matrix4f projection = new Matrix4f().setPerspective(Math.toRadians(90f), 1f, 0.1f, starDistance);
 		Matrix4f view = new Matrix4f();
@@ -165,8 +156,7 @@ public class StarmapRender {
 				noTranslationView.m20(), noTranslationView.m21(), noTranslationView.m22());
 		starmapShader.projectionView.loadMatrix(projectionView);
 		
-		glActiveTexture(GL_TEXTURE0);
-		starCubemap.bind();
+		starCubemap.activate(0);
 
 		starCube.render();
 		VAO.unbind();

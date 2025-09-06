@@ -1,7 +1,6 @@
 package com.avogine.shmupemup.render;
 
 import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL13.*;
 
 import java.nio.*;
 import java.util.*;
@@ -18,6 +17,7 @@ import com.avogine.render.opengl.model.material.Material;
 import com.avogine.render.opengl.model.mesh.Mesh;
 import com.avogine.render.opengl.model.util.ModelLoader;
 import com.avogine.render.opengl.shader.*;
+import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.render.shaders.*;
 import com.avogine.shmupemup.scene.SpaceScene;
@@ -78,10 +78,9 @@ public class SpaceEntityRender {
 		try {
 			depthFBO = FBO.gen().bind();
 
-			depthTexture = Texture.gen().bind()
-					.filterLinear()
-					.texImage2D(GL14.GL_DEPTH_COMPONENT32, 1280, 720, GL11.GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null);
-			Texture.unbind();
+			depthTexture = Texture.gen2D(depth -> depth
+					.texFilterLinear()
+					.texImage2D(GL14.GL_DEPTH_COMPONENT32, 1280, 720, GL11.GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null));
 
 			depthFBO.attachTexture2D(GL30.GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture.id(), 0)
 			.validate();
@@ -116,18 +115,16 @@ public class SpaceEntityRender {
 					.toList();
 			
 			model.getBlinnPhongMaterials().forEach(material -> {
-				glActiveTexture(GL_TEXTURE0);
 				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
 					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
 				}
-				diffuseTexture.bind();
-				glActiveTexture(GL_TEXTURE1);
+				diffuseTexture.activate(0);
 				Texture specularMap = scene.getTextureCache().getDefaultTexture();
 				if (material.getSpecularMapPath() != null) {
 					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
 				}
-				specularMap.bind();
+				specularMap.activate(1);
 				shader.specularFactor.loadFloat(material.getSpecularFactor());
 				
 				material.getStaticMeshes().forEach(mesh ->
@@ -166,18 +163,16 @@ public class SpaceEntityRender {
 					.toList();
 			
 			model.getBlinnPhongMaterials().forEach(material -> {
-				glActiveTexture(GL_TEXTURE0);
 				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
 					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
 				}
-				diffuseTexture.bind();
-				glActiveTexture(GL_TEXTURE1);
+				diffuseTexture.activate(0);
 				Texture specularMap = scene.getTextureCache().getDefaultTexture();
 				if (material.getSpecularMapPath() != null) {
 					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
 				}
-				specularMap.bind();
+				specularMap.activate(1);
 				animShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
 				material.getAnimatedMeshes().forEach(mesh -> 
@@ -252,18 +247,16 @@ public class SpaceEntityRender {
 //					.toList();
 
 			model.getBlinnPhongMaterials().forEach(material -> {
-				glActiveTexture(GL_TEXTURE0);
 				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
 				if (material.getDiffuseTexturePath() != null) {
 					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
 				}
-				diffuseTexture.bind();
-				glActiveTexture(GL_TEXTURE1);
+				diffuseTexture.activate(0);
 				Texture specularMap = scene.getTextureCache().getDefaultTexture();
 				if (material.getSpecularMapPath() != null) {
 					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
 				}
-				specularMap.bind();
+				specularMap.activate(1);
 				instanceShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
 				material.getInstancedMeshes().forEach(Mesh::render);
@@ -321,8 +314,7 @@ public class SpaceEntityRender {
 		particleShader.cameraRightWorldspace.loadVec3(scene.getViewMatrix().m00(), scene.getViewMatrix().m10(), scene.getViewMatrix().m20());
 		particleShader.cameraUpWorldspace.loadVec3(scene.getViewMatrix().m01(), scene.getViewMatrix().m11(), scene.getViewMatrix().m21());
 		
-		glActiveTexture(GL_TEXTURE0);
-		particleEmitter.getParticleTexture().bind();
+		particleEmitter.getParticleTexture().activate(0);
 		
 		FloatBuffer positions = MemoryUtil.memAllocFloat(particleEmitter.getParticles().size() * 4);
 		ByteBuffer colors = MemoryUtil.memAlloc(particleEmitter.getParticles().size() * 4);
@@ -340,7 +332,7 @@ public class SpaceEntityRender {
 			MemoryUtil.memFree(colors);
 		}
 		
-		particleEmitter.getParticleMesh().draw();
+		particleEmitter.getParticleMesh().render();
 		VAO.unbind();
 		
 		particleShader.unbind();
