@@ -8,7 +8,7 @@ import org.joml.Math;
 import org.lwjgl.glfw.GLFW;
 
 import com.avogine.audio.data.*;
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 import com.avogine.util.EasingUtils;
 
@@ -46,7 +46,7 @@ public final class HelixShot extends ShootMode<SpaceEntity> {
 	}
 
 	@Override
-	public SpaceEntity shoot(Model bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
+	public SpaceEntity shoot(StaticModel bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
 		soundSourceSupplier.get().ifPresent(soundSource -> {
 			soundSource.setBuffer(bulletSoundBuffer.getBufferID());
 			soundSource.setGain(0.15f + (float) (Math.random() * 0.05f));
@@ -62,7 +62,7 @@ public final class HelixShot extends ShootMode<SpaceEntity> {
 				bulletPosition,
 				shooter.getOrientation().rotateAxis(Math.toRadians(shotBloom), x, y, 0, new Quaternionf()).get(new AxisAngle4f()),
 				bulletModel.getId(),
-				bulletModel.getAabb());
+				bulletModel.getBoundingBox());
 	}
 	
 	/**

@@ -1,22 +1,23 @@
 package com.avogine.shmupemup.render;
 
 import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL15.*;
-import static org.lwjgl.opengl.GL20.*;
-import static org.lwjgl.opengl.GL30.*;
+import static org.lwjgl.opengl.GL15C.GL_DYNAMIC_DRAW;
+import static org.lwjgl.opengl.GL31.glDrawElementsInstanced;
 
-import java.nio.FloatBuffer;
+import java.nio.*;
 import java.util.*;
-import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.joml.Matrix4f;
-import org.lwjgl.system.MemoryStack;
+import org.joml.*;
+import org.joml.primitives.AABBf;
+import org.lwjgl.system.*;
 
-import com.avogine.render.model.mesh.Boundable;
-import com.avogine.render.opengl.model.material.Material;
-import com.avogine.render.opengl.model.mesh.Mesh;
+import com.avogine.render.model.Model;
+import com.avogine.render.opengl.*;
+import com.avogine.render.opengl.model.mesh.data.Vertex.Attrib;
 import com.avogine.shmupemup.render.shaders.WireframeShader;
 import com.avogine.shmupemup.scene.SpaceScene;
+import com.avogine.shmupemup.scene.SpaceScene.EntityType;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**
@@ -24,81 +25,84 @@ import com.avogine.shmupemup.scene.entities.SpaceEntity;
  */
 public class DebugRender {
 
+	private static final int MAX_INSTANCES_PER_BATCH = 10000;
+	private static final int INSTANCED_VERTEX_COUNT = 6;
+	
 	private WireframeShader shader;
 	
+	private final Set<EntityType> debugTypes = EnumSet.allOf(EntityType.class);
+	
+	private final List<SpaceEntity> modelEntityList;
+	
 	private final Matrix4f projectionViewMatrix;
-	private int aabbVao;
-	private int aabbVbo;
-	private int aabbEbo;
-	private int aabbVertexCount;
+	
+	private VAO vao;
+	private VBO vbo;
+	private VBO instanceVbo;
+	private VBO ebo;
+	private int aabbVertexCount = 24;
+	
+	private final Vector3f aabbCenter;
+	private final Vector3f aabbExtent;
 	
 	/**
 	 * 
 	 */
 	public DebugRender() {
+		modelEntityList = new ArrayList<>();
+		
 		projectionViewMatrix = new Matrix4f();
+		
+		aabbCenter = new Vector3f();
+		aabbExtent = new Vector3f();
 	}
 	
 	/**
-	 * 
+	 * TODO Support instance chunks
 	 */
 	public void init() {
 		shader = new WireframeShader();
 		
-		var aabbPositions = new float[] {
-				-1f, -1f,  1f, //0
-				 1f, -1f,  1f, //1
-				-1f,  1f,  1f, //2
-				 1f,  1f,  1f, //3
-				-1f, -1f, -1f, //4
-				 1f, -1f, -1f, //5
-				-1f,  1f, -1f, //6
-				 1f,  1f, -1f  //7
+		AABBf unitCube = new AABBf(-0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f);
+		float[] vertices = new float[] {
+				// Front face
+				unitCube.minX, unitCube.minY, unitCube.maxZ, // 0
+				unitCube.maxX, unitCube.minY, unitCube.maxZ, // 1
+				unitCube.maxX, unitCube.maxY, unitCube.maxZ, // 2
+				unitCube.minX, unitCube.maxY, unitCube.maxZ, // 3
+				// Back face
+				unitCube.minX, unitCube.minY, unitCube.minZ, // 4
+				unitCube.maxX, unitCube.minY, unitCube.minZ, // 5
+				unitCube.maxX, unitCube.maxY, unitCube.minZ, // 6
+				unitCube.minX, unitCube.maxY, unitCube.minZ  // 7
 		};
+		FloatBuffer vertexData = MemoryUtil.memAllocFloat(vertices.length).put(0, vertices);
 		
-		var indices = new int[] {
-				//Top
-				2, 6, 7,
-				2, 3, 7,
-
-				//Bottom
-				0, 4, 5,
-				0, 1, 5,
-
-				//Left
-				0, 2, 6,
-				0, 4, 6,
-
-				//Right
-				1, 3, 7,
-				1, 5, 7,
-
-				//Front
-				0, 2, 3,
-				0, 1, 3,
-
-				//Back
-				4, 6, 7,
-				4, 5, 7
+		int[] indices = new int[] {
+				0, 1, 1, 2, 2, 3, 3, 0,
+				4, 5, 5, 6, 6, 7, 7, 4,
+				0, 4, 1, 5, 2, 6, 3, 7
 		};
-		aabbVertexCount = indices.length;
+		IntBuffer indexData = MemoryUtil.memAllocInt(indices.length).put(0, indices);
 		
-		// TODO Replace with VAO type
-		aabbVao = glGenVertexArrays();
-		glBindVertexArray(aabbVao);
+		int vertexOffset = Float.BYTES * 3;
+		int vertexStride = 2 * vertexOffset;
 		
-		aabbVbo = glGenBuffers();
-		glBindBuffer(GL_ARRAY_BUFFER, aabbVbo);
-		glBufferData(GL_ARRAY_BUFFER, aabbPositions, GL_DYNAMIC_DRAW);
-		
-		aabbEbo = glGenBuffers();
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, aabbEbo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
-		
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-		
-		glBindVertexArray(0);
+		try {
+			vao = new VAO();
+			
+			vbo = VBO.arrayBuffer(vertexData);
+			new Attrib(0, Attrib.POINTER_3F).enable();
+			
+			instanceVbo = VBO.arrayBuffer((long) MAX_INSTANCES_PER_BATCH * INSTANCED_VERTEX_COUNT * Float.BYTES, GL_DYNAMIC_DRAW);
+			new Attrib(1, new Attrib.Pointer(3, GL_FLOAT, false, vertexStride, 0L), 1).enable();
+			new Attrib(2, new Attrib.Pointer(3, GL_FLOAT, false, vertexStride, vertexOffset), 1).enable();
+			
+			ebo = VBO.elementArrayBuffer(indexData);
+		} finally {
+			MemoryUtil.memFree(vertexData);
+			MemoryUtil.memFree(indexData);
+		}
 	}
 	
 	/**
@@ -108,9 +112,10 @@ public class DebugRender {
 		if (shader != null) {
 			shader.cleanup();
 		}
-		glDeleteVertexArrays(aabbVao);
-		glDeleteBuffers(aabbVbo);
-		glDeleteBuffers(aabbEbo);
+		vbo.cleanup();
+		instanceVbo.cleanup();
+		ebo.cleanup();
+		vao.cleanup();
 	}
 	
 	/**
@@ -120,84 +125,55 @@ public class DebugRender {
 		shader.bind();
 		
 		shader.projectionViewMatrix.loadMatrix(scene.getProjectionMatrix().mul(scene.getViewMatrix(), projectionViewMatrix));
-
-		glDisable(GL_CULL_FACE);
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		shader.wireframeColor.loadVec4(1.0f, 1.0f, 0.0f, 1.0f);
 		
-		glBindVertexArray(aabbVao);
-		glBindBuffer(GL_ARRAY_BUFFER, aabbVbo);
-		
-		scene.getStaticModels().stream()
-		.forEach(model -> {
-			List<SpaceEntity> entities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
-			
-			model.getMaterials().forEach(material -> {
-				shader.wireframeColor.loadVec4(1.0f, 1.0f, 0.0f, 1.0f);
-				
-				getBoundableMeshesFromMaterial(material).forEach(mesh -> entities.forEach(entity -> {
-					var aabb = entity.getWorldCollider();
-					try (MemoryStack stack = MemoryStack.stackPush()) {
-						FloatBuffer positionsBuffer = stack.mallocFloat(8 * 3);
-						positionsBuffer
-						.put(aabb.minX).put(aabb.minY).put(aabb.maxZ)
-						.put(aabb.maxX).put(aabb.minY).put(aabb.maxZ)
-						.put(aabb.minX).put(aabb.maxY).put(aabb.maxZ)
-						.put(aabb.maxX).put(aabb.maxY).put(aabb.maxZ)
-						.put(aabb.minX).put(aabb.minY).put(aabb.minZ)
-						.put(aabb.maxX).put(aabb.minY).put(aabb.minZ)
-						.put(aabb.minX).put(aabb.maxY).put(aabb.minZ)
-						.put(aabb.maxX).put(aabb.maxY).put(aabb.minZ);
-						positionsBuffer.flip();
-						glBufferSubData(GL_ARRAY_BUFFER, 0, positionsBuffer);
-					}
-					
-					glDrawElements(GL_TRIANGLES, aabbVertexCount, GL_UNSIGNED_INT, 0);
-				}));
-			});
-			
-//			model.getMaterials().forEach(material -> {
-//				shader.wireframeColor.loadVec4(1.0f, 1.0f, 0.0f, 1.0f);
-//				
-//				model.getMeshes().stream()
-//				.filter(mesh -> mesh.getMaterialIndex() == model.getMaterials().indexOf(material))
-//				.forEach(mesh -> 
-//					entities.forEach(entity -> {
-//						var aabb = entity.getWorldCollider();
-//						try (MemoryStack stack = MemoryStack.stackPush()) {
-//							FloatBuffer positionsBuffer = stack.mallocFloat(8 * 3);
-//							positionsBuffer
-//							.put(aabb.minX).put(aabb.minY).put(aabb.maxZ)
-//							.put(aabb.maxX).put(aabb.minY).put(aabb.maxZ)
-//							.put(aabb.minX).put(aabb.maxY).put(aabb.maxZ)
-//							.put(aabb.maxX).put(aabb.maxY).put(aabb.maxZ)
-//							.put(aabb.minX).put(aabb.minY).put(aabb.minZ)
-//							.put(aabb.maxX).put(aabb.minY).put(aabb.minZ)
-//							.put(aabb.minX).put(aabb.maxY).put(aabb.minZ)
-//							.put(aabb.maxX).put(aabb.maxY).put(aabb.minZ);
-//							positionsBuffer.flip();
-//							glBufferSubData(GL_ARRAY_BUFFER, 0, positionsBuffer);
-//						}
-//						
-//						glDrawElements(GL_TRIANGLES, aabbVertexCount, GL_UNSIGNED_INT, 0);
-//					})
-//				);
-//			});
-		});
-
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
-		
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		glEnable(GL_CULL_FACE);
+		renderModels(scene.getStaticModels(), scene);
+		renderModels(scene.getEmissiveModels(), scene);
+		renderModels(scene.getAnimatedModels(), scene);
+		renderModels(scene.getStaticInstancedModels(), scene);
 		
 		shader.unbind();
 	}
 	
-	@SuppressWarnings("unchecked")
-	private <T extends Mesh & Boundable> Stream<T> getBoundableMeshesFromMaterial(Material material) {
-		return (Stream<T>) Stream.concat(material.getStaticMeshes().stream(), material.getAnimatedMeshes().stream());
+	private <T extends Model<?, ?>> void renderModels(List<T> models, SpaceScene scene) {
+		AtomicInteger instanceIndex = new AtomicInteger();
+		vao.bind();
+		
+		instanceVbo.bind();
+		models.forEach(model -> {
+			fillEntityList(model.getId(), debugTypes, scene);
+
+			model.getMaterialMap().forEach((_, meshList) -> meshList
+					.forEach(_ -> modelEntityList
+							.forEach(entity -> {
+								AABBf aabb = entity.getWorldCollider();
+								aabb.center(aabbCenter);
+								aabb.extent(aabbExtent);
+								
+								try (MemoryStack stack = MemoryStack.stackPush()) {
+									FloatBuffer instancedBuffer = stack.mallocFloat(INSTANCED_VERTEX_COUNT);
+									instancedBuffer
+									.put(aabbCenter.x).put(aabbCenter.y).put(aabbCenter.z)
+									.put(aabbExtent.x).put(aabbExtent.y).put(aabbExtent.z)
+									.flip();
+
+									instanceVbo.bufferSubData((long) instanceIndex.getAndIncrement() * INSTANCED_VERTEX_COUNT * Float.BYTES, instancedBuffer);
+								}
+							}))
+					);
+		});
+		instanceVbo.unbind();
+		
+		glDrawElementsInstanced(GL_LINES, aabbVertexCount, GL_UNSIGNED_INT, 0, instanceIndex.get());
+	}
+	
+	private void fillEntityList(String modelID, Set<EntityType> types, SpaceScene scene) {
+		modelEntityList.clear();
+		types.forEach(type -> scene.getEntities(type).forEach(entity -> {
+			if (Objects.equals(entity.getModelId(), modelID)) {
+				modelEntityList.add(entity);
+			}
+		}));
 	}
 	
 }

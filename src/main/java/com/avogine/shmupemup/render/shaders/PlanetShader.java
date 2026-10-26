@@ -14,13 +14,11 @@ public class PlanetShader extends ShaderProgram {
 	public final UniformMat4 view = new UniformMat4();
 	public final UniformMat4 model = new UniformMat4();
 	
-	public final UniformMat3 normalMatrix = new UniformMat3();
-	
 	public final UniformSampler Texture0 = new UniformSampler();
 	
 	public PlanetShader() {
 		super(SHADERS.with("planetVertex.glsl"), SHADERS.with("planetFragment.glsl"));
-		storeAllUniformLocations(projection, view, model, normalMatrix, Texture0);
+		storeAllUniformLocations(projection, view, model, Texture0);
 		loadTexUnit();
 	}
 	

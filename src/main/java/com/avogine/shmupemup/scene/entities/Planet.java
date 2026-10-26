@@ -2,14 +2,14 @@ package com.avogine.shmupemup.scene.entities;
 
 import org.joml.*;
 
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 
 /**
  * A special {@link Entity} type that does not cache it's model as there should only be one per entity.
  */
 public final class Planet extends Entity {
 
-	private Model model;
+	private StaticModel model;
 	
 	/**
 	 * @param position 
@@ -17,7 +17,7 @@ public final class Planet extends Entity {
 	 * @param scale 
 	 * @param model
 	 */
-	public Planet(Vector3f position, AxisAngle4f orientation, float scale, Model model) {
+	public Planet(Vector3f position, AxisAngle4f orientation, float scale, StaticModel model) {
 		super(ENTITY_ID_SUPPLIER.get());
 		this.transform = new Transform(position, orientation, scale);
 		this.model = model;
@@ -35,7 +35,7 @@ public final class Planet extends Entity {
 	/**
 	 * @return the model
 	 */
-	public Model getModel() {
+	public StaticModel getModel() {
 		return model;
 	}
 	

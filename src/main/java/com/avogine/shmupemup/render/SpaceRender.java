@@ -12,13 +12,13 @@ import static org.lwjgl.opengl.GL11C.glBlendFunc;
 import static org.lwjgl.opengl.GL11C.glViewport;
 
 import com.avogine.io.Window;
-import com.avogine.render.SceneRender;
+import com.avogine.render.Render;
 import com.avogine.shmupemup.scene.SpaceScene;
 
 /**
  *
  */
-public class SpaceSceneRender implements SceneRender<SpaceScene> {
+public class SpaceRender implements Render<SpaceScene> {
 
 	private final StarmapRender starmapRender;
 	private final PlanetRender planetRender;
@@ -28,7 +28,7 @@ public class SpaceSceneRender implements SceneRender<SpaceScene> {
 	/**
 	 * 
 	 */
-	public SpaceSceneRender() {
+	public SpaceRender() {
 		starmapRender = new StarmapRender();
 		planetRender = new PlanetRender();
 		spaceEntityRender = new SpaceEntityRender();
@@ -93,5 +93,11 @@ public class SpaceSceneRender implements SceneRender<SpaceScene> {
 		spaceEntityRender.cleanup();
 		debugRender.cleanup();
 	}
-	
+
+	@Override
+	public void resize(int width, int height) {
+		// TODO Move viewport resizing calculations in here so that it isn't run every frame
+		
+	}
+
 }

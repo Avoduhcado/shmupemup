@@ -5,6 +5,7 @@ import java.util.*;
 import org.joml.Vector3f;
 
 import com.avogine.shmupemup.scene.SpaceScene;
+import com.avogine.shmupemup.scene.SpaceScene.EntityType;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**
@@ -70,7 +71,7 @@ public class FlightController {
 	 * @param scene
 	 */
 	public void setupData(SpaceScene scene) {
-		scene.getSpaceEntities().filter(entity -> entity.getModelId().equals("alien")).forEach(entity -> entityFlightPaths.put(entity, null));
+		scene.getEntities(EntityType.ENEMY).forEach(entity -> entityFlightPaths.put(entity, null));
 	}
 	
 	/**
@@ -78,28 +79,23 @@ public class FlightController {
 	 * @param delta
 	 */
 	public void update(SpaceScene scene, float delta) {
-		scene.getSpaceEntities()
-		.filter(entityFlightPaths::containsKey)
-		.forEach(entity -> {
-			if (entityFlightPaths.get(entity) == null) {
-				entityFlightPaths.put(
-						entity,
-						new Flight(
-								new Path(
-										new Vector3f(entity.getPosition()),
-										entity.getPosition().add(randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), new Vector3f()),
-										entity.getPosition().add(randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), new Vector3f()),
-										entity.getPosition().add(randy.nextFloat(-10, 10), randy.nextFloat(-10, 10), randy.nextFloat(-10, 10), new Vector3f())),
-								randy.nextFloat(2, 5)));
-			}
-			var flight = entityFlightPaths.get(entity);
-			
-			entity.getPosition().set(flight.moveTo());
-			entity.updateModelMatrix();
-			
-			flight.time = Math.clamp(flight.time + delta, 0, flight.duration);
-			if (flight.time == flight.duration) {
-				entityFlightPaths.put(entity, null);
+		scene.getEntities(EntityType.ENEMY).forEach(entity -> {
+			if (entityFlightPaths.containsKey(entity)) {
+				Flight flight = entityFlightPaths.computeIfAbsent(entity, k -> new Flight(
+						new Path(
+								new Vector3f(k.getPosition()),
+								entity.getPosition().add(randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), new Vector3f()),
+								entity.getPosition().add(randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), randy.nextFloat(-5, 5), new Vector3f()),
+								entity.getPosition().add(randy.nextFloat(-10, 10), randy.nextFloat(-10, 10), randy.nextFloat(-10, 10), new Vector3f())),
+						randy.nextFloat(2, 5)));
+				
+				entity.getPosition().set(flight.moveTo());
+				entity.updateModelMatrix();
+				
+				flight.time = Math.clamp(flight.time + delta, 0, flight.duration);
+				if (flight.time == flight.duration) {
+					entityFlightPaths.put(entity, null);
+				}
 			}
 		});
 	}

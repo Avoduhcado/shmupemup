@@ -3,6 +3,7 @@ package com.avogine.shmupemup.game.title;
 import static org.lwjgl.nuklear.Nuklear.*;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.nuklear.*;
@@ -11,14 +12,11 @@ import org.lwjgl.system.MemoryStack;
 import com.avogine.game.ui.NuklearGUI;
 import com.avogine.game.ui.nuklear.NuklearUIElement;
 import com.avogine.io.Window;
-import com.avogine.shmupemup.game.Title.TitleScene;
 
 /**
  *
  */
 public class TitleMenu extends NuklearUIElement {
-
-	private final TitleScene scene;
 	
 	private String windowTitle;
 	private NkRect position;
@@ -29,13 +27,20 @@ public class TitleMenu extends NuklearUIElement {
 	private NkRect audioPosition;
 	private int audioWindowOpts;
 	
+	private final Consumer<Boolean> startNewGame;
+	private final boolean saveGamesExist;
+	
 	/**
-	 * @param nuklearContext
-	 * @param scene
+	 * @param gui
+	 * @param diplayWidth 
+	 * @param displayHeight 
+	 * @param startNewGame 
+	 * @param saveGamesExist 
 	 */
-	public TitleMenu(NuklearGUI nuklearContext, TitleScene scene) {
-		super(nuklearContext, scene.getProjection().getWidth(), scene.getProjection().getHeight());
-		this.scene = scene;
+	public TitleMenu(NuklearGUI gui, int diplayWidth, int displayHeight, Consumer<Boolean> startNewGame, boolean saveGamesExist) {
+		super(gui, diplayWidth, displayHeight);
+		this.startNewGame = startNewGame;
+		this.saveGamesExist = saveGamesExist;
 	}
 	
 	@Override
@@ -97,10 +102,10 @@ public class TitleMenu extends NuklearUIElement {
 			if (nk_begin(context, windowTitle, position, windowOpts)) {
 				nk_layout_row_dynamic(context, 35, 1);
 				if (nk_button_label(context, "New Game")) {
-					scene.setStartGame(true);
+					startNewGame.accept(true);
 				}
 
-				if (nk_button_label_styled(context, scene.saveGamesExist() ? style.button() : disabledStyleButton, "Load Game") && scene.saveGamesExist()) {
+				if (nk_button_label_styled(context, saveGamesExist ? style.button() : disabledStyleButton, "Load Game") && saveGamesExist) {
 					// TODO No saved games
 				}
 
@@ -148,7 +153,7 @@ public class TitleMenu extends NuklearUIElement {
 	}
 	
 	@Override
-	public void cleanup() {
+	public void onCleanup() {
 		Objects.requireNonNull(position).free();
 		Objects.requireNonNull(audioPosition).free();
 	}

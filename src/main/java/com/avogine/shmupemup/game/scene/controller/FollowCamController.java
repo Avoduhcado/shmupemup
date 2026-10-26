@@ -48,7 +48,7 @@ public class FollowCamController {
 	 * @param camera 
 	 */
 	public FollowCamController(Transform followTarget, Camera camera) {
-		this(followTarget, camera, new Vector3f(0, 0, 1.5f), new Vector3f(0, 1.2f, -3f));
+		this(followTarget, camera, new Vector3f(0, 2.25f, 10.5f), new Vector3f(0, 2.25f, -5f));
 	}
 	
 	/**

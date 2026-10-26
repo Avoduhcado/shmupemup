@@ -1,10 +1,10 @@
 package com.avogine.shmupemup.scene.entities.physics;
 
-import org.joml.Vector3f;
+import org.joml.*;
 import org.joml.primitives.AABBf;
 
 /**
- *
+ * TODO Add rotational velocity
  */
 public class Body {
 
@@ -25,6 +25,7 @@ public class Body {
 	 * @param velocity
 	 * @param acceleration
 	 * @param mass
+	 * @param categoryBitMask 
 	 * @param collisionBitMask
 	 */
 	public Body(AABBf collider, Vector3f velocity, Vector3f acceleration, float mass, int categoryBitMask, int collisionBitMask) {
@@ -42,6 +43,14 @@ public class Body {
 	 */
 	public Body(BodyConstraints constraints) {
 		this(constraints.collider(), constraints.velocity(), constraints.acceleration(), constraints.mass(), constraints.categoryBitMask(), constraints.collisionBitMask());
+	}
+	
+	/**
+	 * @param modelMatrix
+	 * @return transformedCollider
+	 */
+	public AABBf update(Matrix4f modelMatrix) {
+		return collider.transform(modelMatrix, transformedCollider);
 	}
 	
 	/**

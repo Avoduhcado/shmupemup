@@ -28,7 +28,7 @@ public abstract sealed class Entity permits Planet, SpaceEntity {
 	 * 
 	 */
 	public void updateModelMatrix() {
-		modelMatrix.translationRotateScale(transform.position(), transform.orientation(), transform.scale());
+		modelMatrix.translationRotateScale(transform.position(), transform.orientation().normalize(), transform.scale());
 	}
 	
 	/**

@@ -7,7 +7,7 @@ import org.joml.*;
 import org.joml.Math;
 
 import com.avogine.audio.data.*;
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**
@@ -24,7 +24,7 @@ public final class SingleShot extends ShootMode<SpaceEntity> {
 	}
 	
 	@Override
-	public SpaceEntity shoot(Model bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
+	public SpaceEntity shoot(StaticModel bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
 		soundSourceSupplier.get().ifPresent(soundSource -> {
 			soundSource.setBuffer(bulletSoundBuffer.getBufferID());
 			soundSource.setGain(0.15f + (float) (Math.random() * 0.05f));
@@ -35,7 +35,7 @@ public final class SingleShot extends ShootMode<SpaceEntity> {
 				new Vector3f().set(shooter.getPosition()),
 				new Quaternionf().set(shooter.getOrientation()).get(new AxisAngle4f()),
 				bulletModel.getId(),
-				bulletModel.getAabb());
+				bulletModel.getBoundingBox());
 	}
 	
 }

@@ -1,11 +1,11 @@
 package com.avogine.shmupemup.render;
 
-import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL13.GL_TEXTURE_CUBE_MAP_POSITIVE_X;
-import static org.lwjgl.opengl.GL15.GL_STREAM_DRAW;
-import static org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0;
+import static org.lwjgl.opengl.GL11C.*;
+import static org.lwjgl.opengl.GL13C.GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+import static org.lwjgl.opengl.GL14C.GL_DEPTH_COMPONENT24;
+import static org.lwjgl.opengl.GL15C.GL_STREAM_DRAW;
 
-import java.nio.*;
+import java.nio.FloatBuffer;
 
 import org.joml.*;
 import org.joml.Math;
@@ -13,8 +13,10 @@ import org.lwjgl.system.MemoryUtil;
 
 import com.avogine.game.scene.Scene;
 import com.avogine.render.opengl.*;
-import com.avogine.render.opengl.VAO.VAOBuilder.VertexAttrib;
+import com.avogine.render.opengl.FBO.*;
+import com.avogine.render.opengl.FBO.Renderbuffer.Storage;
 import com.avogine.render.opengl.model.mesh.StaticMesh;
+import com.avogine.render.opengl.model.mesh.data.Vertex.Attrib;
 import com.avogine.render.opengl.model.util.ParShapesLoader;
 import com.avogine.render.opengl.texture.Texture;
 import com.avogine.shmupemup.render.shaders.*;
@@ -58,65 +60,70 @@ public class StarmapRender {
 		FloatBuffer vertexData = MemoryUtil.memAllocFloat(starsToRender * 3);
 		for (int i = 0; i < starsToRender; i++) {
 			// Load up random XYZ coordinate for each star
-			vertexData.put((random.nextFloat() * starDistance) - starHalf)
+			vertexData
+			.put((random.nextFloat() * starDistance) - starHalf)
 			.put((random.nextFloat() * starDistance) - starHalf)
 			.put((random.nextFloat() * starDistance) - starHalf);
 		}
 		vertexData.flip();
 		
-		var starVAO = VAO.gen(vertexArray -> vertexArray
-				.bindBufferData(new VBO(GL_STREAM_DRAW), vertexData)
-				.enablePointer(0, VertexAttrib.Format.tightlyPackedUnnormalizedFloat(3)));
-		MemoryUtil.memFree(vertexData);
-		
-		int cubemapSize = 4096;
-		starCubemap = Texture.genCubeMap(cubemap -> cubemap
-				.texFilterLinear()
-				.texWrap3DClampToEdge()
-				.texCubeMap(cubemapSize, cubemapSize, GL_RGBA, (ByteBuffer) null));
-		
-		Matrix4f projection = new Matrix4f().setPerspective(Math.toRadians(90f), 1f, 0.1f, starDistance);
-		Matrix4f view = new Matrix4f();
-		
-		int[] viewport = new int[4];
-		glGetIntegerv(GL_VIEWPORT, viewport);
-		glViewport(0, 0, cubemapSize, cubemapSize);
-		
-		float[] clearColor = new float[4];
-		glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		try {
+			VAO starVAO = new VAO();
+			VBO.arrayBuffer(vertexData, GL_STREAM_DRAW);
+			new Attrib(0, Attrib.POINTER_3F).enable();
+			
+			int cubemapSize = 4096;
+			starCubemap = Texture.genCubeMap(builder -> builder
+					.minFilter().linear()
+					.magFilter().linear()
+					.wrapSTR().clampToEdge()
+					.cubeMap(cubemapSize, cubemapSize, GL_RGBA));
 
-		FBO starFBO = FBO.gen().bind();
-		
-		spaceShader.bind();
-		glDisable(GL_DEPTH_TEST);
-		glDisable(GL_CULL_FACE);
-		spaceShader.projection.loadMatrix(projection);
-		starVAO.bind();
-		for (int i = 0; i < 6; i++) {
-			starFBO.attachTexture2D(GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, starCubemap.id(), 0);
+			Matrix4f projection = new Matrix4f().setPerspective(Math.toRadians(90f), 1f, 0.1f, starDistance);
+			Matrix4f view = new Matrix4f();
 
-			glClear(GL_COLOR_BUFFER_BIT);
+			int[] viewport = new int[4];
+			glGetIntegerv(GL_VIEWPORT, viewport);
+			glViewport(0, 0, cubemapSize, cubemapSize);
 
-			orientView(view, i);
-			spaceShader.view.loadMatrix(view);
+			float[] clearColor = new float[4];
+			glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-			glDrawArrays(GL_POINTS, 0, starsToRender);
+			FBO starFBO = FBO.framebuffer(Renderbuffer.depth(new Storage(GL_DEPTH_COMPONENT24, cubemapSize, cubemapSize)));
+
+			spaceShader.bind();
+			glDisable(GL_DEPTH_TEST);
+			glDisable(GL_CULL_FACE);
+			spaceShader.projection.loadMatrix(projection);
+			
+			starFBO.bind();
+			for (int i = 0; i < 6; i++) {
+				starFBO.texture(FramebufferTexture.color0(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, starCubemap.id()));
+
+				glClear(GL_COLOR_BUFFER_BIT);
+
+				orientView(view, i);
+				spaceShader.view.loadMatrix(view);
+
+				glDrawArrays(GL_POINTS, 0, starsToRender);
+			}
+			
+			starFBO.unbind();
+			// TODO Wrap this in some Render/Window call so it can poll properties
+			glEnable(GL_CULL_FACE);
+			glEnable(GL_DEPTH_TEST);
+			spaceShader.unbind();
+
+			glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+			glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+
+			spaceShader.cleanup();
+			starVAO.cleanup();
+			starFBO.cleanup();
+		} finally {
+			MemoryUtil.memFree(vertexData);
 		}
-
-		FBO.unbind();
-		VAO.unbind();
-		// TODO Wrap this in some Render/Window call so it can poll properties
-		glEnable(GL_CULL_FACE);
-		glEnable(GL_DEPTH_TEST);
-		spaceShader.unbind();
-
-		glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-		glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
-		
-		spaceShader.cleanup();
-		starVAO.cleanup();
-		starFBO.cleanup();
 		
 		starCube = ParShapesLoader.loadCube(2);
 	}
@@ -157,9 +164,7 @@ public class StarmapRender {
 		starmapShader.projectionView.loadMatrix(projectionView);
 		
 		starCubemap.activate(0);
-
 		starCube.render();
-		VAO.unbind();
 		
 		glDepthFunc(GL_LESS);
 		glCullFace(GL_BACK);

@@ -1,44 +1,43 @@
 package com.avogine.shmupemup.scene;
 
 import static com.avogine.util.resource.ResourceConstants.*;
-import static java.lang.Math.toRadians;
-import static org.lwjgl.system.MemoryUtil.*;
+import static org.lwjgl.util.par.ParShapes.par_shapes_free_mesh;
 
-import java.nio.FloatBuffer;
+import java.nio.*;
 import java.util.*;
 import java.util.Random;
-import java.util.stream.*;
+import java.util.stream.IntStream;
 
 import org.joml.*;
 import org.joml.Math;
 import org.joml.primitives.AABBf;
 import org.lwjgl.system.*;
-import org.lwjgl.util.par.*;
+import org.lwjgl.util.par.ParShapesMesh;
 
 import com.avogine.audio.data.*;
 import com.avogine.entity.AnimationData;
 import com.avogine.game.scene.*;
 import com.avogine.io.Window;
 import com.avogine.logging.AvoLog;
+import com.avogine.render.model.Model;
+import com.avogine.render.model.material.SimpleMaterial;
+import com.avogine.render.model.material.data.BlinnPhongData;
 import com.avogine.render.model.mesh.data.*;
-import com.avogine.render.opengl.VAO;
-import com.avogine.render.opengl.model.Model;
-import com.avogine.render.opengl.model.material.SimpleMaterial;
-import com.avogine.render.opengl.model.material.data.BlinnPhongData;
-import com.avogine.render.opengl.model.mesh.*;
+import com.avogine.render.opengl.model.*;
+import com.avogine.render.opengl.model.mesh.StaticMesh.StaticInstancedMesh;
 import com.avogine.render.opengl.model.util.*;
 import com.avogine.render.opengl.particle.ParticleMesh;
+import com.avogine.render.opengl.particle.ParticleMesh.ParticleData;
 import com.avogine.render.opengl.texture.Texture;
 import com.avogine.render.opengl.texture.util.*;
 import com.avogine.render.util.ParShapesBuilder;
 import com.avogine.shmupemup.game.scene.particles.SpaceshipParticleEmitter;
-import com.avogine.shmupemup.render.data.EmissiveMaterial;
 import com.avogine.shmupemup.scene.entities.*;
 import com.avogine.shmupemup.scene.entities.physics.*;
 import com.avogine.util.ShapeUtils;
 
 /**
- *
+ * TODO Add loadLevel function or something similar to be able to change out enemies, planets, scenery, etc
  */
 public class SpaceScene extends Scene {
 
@@ -47,17 +46,19 @@ public class SpaceScene extends Scene {
 	private static final float FAR_PLANE = 15000.0f;
 	private static final int WIDTH = 16;
 	private static final int HEIGHT = 9;
+
+	private final Map<EntityType, List<SpaceEntity>> entityMap;
+	private final List<Planet> planets;
 	
-	private final List<Entity> entities;
 	private SpaceEntity player;
-	public SpaceEntity bob;
 	private SpaceshipParticleEmitter spaceshipParticleEmitter;
 	private final Set<SoundSource> playerSoundSources;
-	private final SoundListener soundListener;
+	private SoundListener soundListener;
 	
-	private final List<Model> staticModels;
-	private final List<Model> instancedModels;
-	private final List<Model> animatedModels;
+	private final List<StaticModel> staticModels;
+	private final List<StaticModel> emissiveModels;
+	private final List<StaticModel> instancedModels;
+	private final List<AnimatedModel> animatedModels;
 	private final TextureCache textureCache;
 	private final Map<String, SoundBuffer> soundBufferCache;
 	private final Map<SpaceEntity, SoundSource> entitySoundSources;
@@ -65,15 +66,29 @@ public class SpaceScene extends Scene {
 	private final Random random;
 	
 	/**
+	 *
+	 */
+	public enum EntityType {
+		PLAYER,
+		ENEMY,
+		PROJECTILE,
+		SCENERY,
+		NPC
+	}
+	
+	/**
 	 * 
 	 */
 	public SpaceScene() {
 		super(new Projection(FOV, WIDTH, HEIGHT, NEAR_PLANE, FAR_PLANE), new Camera());
-		entities = new ArrayList<>();
-		soundListener = new SoundListener();
+		entityMap = new EnumMap<>(EntityType.class);
+		
+		planets = new ArrayList<>();
+		
 		playerSoundSources = new HashSet<>();
 		
 		staticModels = new ArrayList<>();
+		emissiveModels = new ArrayList<>();
 		instancedModels = new ArrayList<>();
 		animatedModels = new ArrayList<>();
 		textureCache = new TextureCache();
@@ -88,8 +103,12 @@ public class SpaceScene extends Scene {
 	 * @param window The {@link Window} this Scene is being displayed in.
 	 */
 	public void init(Window window) {
-		projection.setAspectRatio(window.getFbWidth(), window.getFbHeight());
-		
+		projection.setAspectRatio(window.getWidth(), window.getHeight());
+		for (var entityType : EntityType.values()) {
+			entityMap.put(entityType, new ArrayList<>());
+		}
+
+		soundListener = new SoundListener();
 		initPlanets();
 		initPlayer();
 		initLasers();
@@ -97,12 +116,12 @@ public class SpaceScene extends Scene {
 		initAliens();
 		
 //		StaticModel bobModel = ModelLoader.loadModel("bob", MODELS.with("dancing_vampire.dae"), textureCache);
-		Model bobModel = ModelLoader.loadModel("bob", MODELS.with("dancing_vampire.dae"), textureCache, true);
+		AnimatedModel bobModel = ModelLoader.loadAnimatedModel("bob", MODELS.with("dancing_vampire.dae"), textureCache);
 		animatedModels.add(bobModel);
 		
 		AnimationData bobAnimation = new AnimationData(bobModel.getAnimations().getFirst());
-		bob = new SpaceEntity(new Vector3f(0, 0, -15), new AxisAngle4f(), 1.5f, bobModel.getId(), new Body(new BodyConstraints(new AABBf(), 0x0, 0x0)), bobAnimation);
-		addEntity(bob);
+		var bob = new SpaceEntity(new Vector3f(0, 0, -15), new AxisAngle4f(), 0.015f, bobModel.getId(), new Body(new BodyConstraints(bobModel.getBoundingBox(), 0x0, 0x0)), bobAnimation);
+		addEntity(EntityType.NPC, bob);
 	}
 	
 	private void initPlanets() {
@@ -111,15 +130,15 @@ public class SpaceScene extends Scene {
 		var gasGiantMaterial = new SimpleMaterial(new BlinnPhongData(kuromiTexturePath));
 
 		String kuromiPlanetModelId = "kuromiPlanet";
-		StaticMesh planetMesh = ParShapesLoader.loadFromBuilder(builder -> builder.createSphere(4).build(ParShapesLoader.STATIC_MESH_BUILDER));
-		gasGiantMaterial.addMesh(planetMesh);
-		Model planetModel = new Model(kuromiPlanetModelId, gasGiantMaterial);
+		var planetMesh = ParShapesLoader.loadFromBuilder(builder -> builder.createSphere(4).build(ParShapesLoader.STATIC_MESH_BUILDER));
+		StaticModel planetModel = new StaticModel(kuromiPlanetModelId, Map.of(gasGiantMaterial, List.of(planetMesh)));
 
-		var planetPosition = new Vector3f(1000, 2200, -6500);
-		var axisAngle = new AxisAngle4f(Math.toRadians(-75), 1, 0, 0);
+		var planetPosition = new Vector3f(-1000, -1200, -6500);
+		var axisAngle = new AxisAngle4f();
 		
 		var planet = new Planet(planetPosition, axisAngle, 1500f, planetModel);
-		addEntity(planet);
+		planet.getOrientation().rotateXYZ(Math.toRadians(-5.0f), 0, Math.toRadians(5.0f));
+		planets.add(planet);
 		
 //		planetPosition = new Vector3f(-1000, 600, -3500);
 //		axisAngle = new AxisAngle4f(Math.toRadians(-100), 1, 0, 0);
@@ -130,17 +149,14 @@ public class SpaceScene extends Scene {
 	}
 	
 	private void initAsteroidBelt(Planet planet) {
-		var instancedRockMesh = new ParShapesBuilder().createRock(random.nextInt(), 2).build(parMesh -> {
+		var asteroidMesh = new ParShapesBuilder().createRock(random.nextInt(), 2).build(parMesh -> {
 			int instanceCount = 50000;
 			FloatBuffer instanceMatrices = MemoryUtil.memAllocFloat(instanceCount * 16);
-			FloatBuffer instanceNormals = MemoryUtil.memAllocFloat(instanceCount * 16);
 
 			float radius = planet.getScale1f() * 3f;
 			float offset = planet.getScale1f() / 1.2f;
 			
 			var rockModelMatrix = new Matrix4f();
-			var rockModelViewMatrix = new Matrix4f();
-			var rockNormalMatrix = new Matrix4f();
 			var rockWorldPosition = new Vector3f();
 			var rotation = new Quaternionf();
 			
@@ -153,58 +169,66 @@ public class SpaceScene extends Scene {
 				rockWorldPosition.z = displacement * Math.sin(theta);
 				
 				rockModelMatrix.identity().translationRotateScale(
-						rockWorldPosition.rotateX(Math.toRadians(205)).add(planet.getPosition()),
+						rockWorldPosition.rotate(planet.getOrientation()).add(planet.getPosition()),
 						rotation, 
 						random.nextFloat(1.0f, 3.0f));
 				rockModelMatrix.get(i * 16, instanceMatrices);
-				
-				rockModelMatrix.mul(getViewMatrix(), rockModelViewMatrix);
-				rockModelViewMatrix.invert().transpose(rockNormalMatrix);
-				rockNormalMatrix.get(i * 16, instanceNormals);
 			}
 			
 			int vertexCount = parMesh.npoints();
-			int vert3 = vertexCount * 3;
-			int vert2 = vertexCount * 2;
-			var vertexBuffers = new VertexBuffers(memAllocFloat(vert3).put(parMesh.points(vert3)).flip(),
-					(!parMesh.isNull(ParShapesMesh.NORMALS) ? memAllocFloat(vert3).put(parMesh.normals(vert3)).flip() : memCallocFloat(vert3)),
-					memCallocFloat(vert3),
-					memCallocFloat(vert3),
-					(!parMesh.isNull(ParShapesMesh.TCOORDS) ? memAllocFloat(vert2).put(parMesh.tcoords(vert2)).flip() : memCallocFloat(vert2)),
-					memAllocInt(parMesh.ntriangles() * 3).put(parMesh.triangles(parMesh.ntriangles() * 3)).flip());
-			var instancedBuffers = new InstancedBuffers(instanceMatrices, instanceNormals);
+			int triangleCount = parMesh.ntriangles();
+			
+			FloatBuffer positions = parMesh.points(vertexCount * 3);
+			FloatBuffer normals = parMesh.isNull(ParShapesMesh.NORMALS) ? MemoryUtil.memCallocFloat(vertexCount * 3) : parMesh.normals(vertexCount * 3);
+			FloatBuffer tangents = MemoryUtil.memCallocFloat(vertexCount * 3);
+			FloatBuffer bitangents = MemoryUtil.memCallocFloat(vertexCount * 3);
+			FloatBuffer textureCoordinates = parMesh.isNull(ParShapesMesh.TCOORDS) ? MemoryUtil.memCallocFloat(vertexCount * 2) : parMesh.tcoords(vertexCount * 2);
+			IntBuffer indices = parMesh.triangles(triangleCount * 3);
+
+			var vertexData = new VertexData(normals, tangents, bitangents, textureCoordinates);
+			var instanceData = new InstanceData(instanceMatrices, instanceCount);
+			
 			try {
-				return new InstancedMesh(new MeshData(vertexBuffers, new AABBf(), 1, instancedBuffers, instanceCount));
+				return new StaticInstancedMesh(positions, vertexData, indices, new AABBf(), instanceData);
 			} finally {
-				ParShapes.par_shapes_free_mesh(parMesh);
+				if (parMesh.isNull(ParShapesMesh.NORMALS)) {
+					MemoryUtil.memFree(normals);
+				}
+				if (parMesh.isNull(ParShapesMesh.TCOORDS)) {
+					MemoryUtil.memFree(textureCoordinates);
+				}
+				par_shapes_free_mesh(parMesh);
+				MemoryUtil.memFree(tangents);
+				MemoryUtil.memFree(bitangents);
+				MemoryUtil.memFree(instanceMatrices);
 			}
 		});
+		
 		String asteroidTextureID = "asteroid";
 		textureCache.putTexture(asteroidTextureID, TextureLoader.loadRawTexture(32, 32, (byte) 128, (byte) 128, (byte) 128, (byte) 255));
 		String asteroidSpecularID = "asteroidSpec";
 		textureCache.putTexture(asteroidSpecularID, TextureLoader.loadRawTexture(32, 32, (byte) 0, (byte) 0, (byte) 0, (byte) 255));
 		var rockMaterial = new SimpleMaterial(asteroidTextureID, asteroidSpecularID, 2);
-		rockMaterial.addMesh(instancedRockMesh);
-		var instancedRockModel = new Model(planet.getModel().getId() + "-ring", rockMaterial);
-		instancedModels.add(instancedRockModel);
+		
+		var spaceRockModel = new StaticModel("space-rock", Map.of(rockMaterial, List.of(asteroidMesh)));
+		instancedModels.add(spaceRockModel);
 	}
 	
 	private void initPlayer() {
 //		var playerMaterial = new Material(new Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
 //		var playerMesh = ParShapesLoader.loadCubemap(2);
 //		var playerModel = new Model("player", playerMesh, playerMaterial);
-		var playerModel = ModelLoader.loadModel("player", MODELS.with("backpack", "backpack.obj"), textureCache, false);
+		var playerModel = ModelLoader.loadModel("player", MODELS.with("backpack", "backpack.obj"), textureCache);
 //		Model playerModel = StaticModelLoader.loadModel("player", ResourceConstants.MODEL_PATH + "bunny.obj");
 		staticModels.add(playerModel);
-		AABBf playerAABB = playerModel.getAabb();
+		AABBf playerAABB = playerModel.getBoundingBox();
 		var playerEntity = new SpaceEntity(
 				new Vector3f(0, 0f, 0f),
 				new AxisAngle4f(Math.toRadians(180), 0, 1, 0),
 				0.333f,
 				playerModel.getId(),
 				new Body(new BodyConstraints(playerAABB, 0x0, 0x0)));
-		addEntity(playerEntity);
-		setPlayer(playerEntity);
+		addEntity(EntityType.PLAYER, playerEntity);
 		// TODO Set the SoundListener transform to the Camera instead of the player
 		soundListener.setPosition(playerEntity.getPosition());
 		soundListener.setOrientation(playerEntity.getOrientation());
@@ -213,22 +237,24 @@ public class SpaceScene extends Scene {
 		int maxParticleCount = 10000;
 		Texture particleTexture = textureCache.getTexture(TEXTURES.with("particle.png"));
 		
-		var positions = ShapeUtils.mallocCircleVertices(0.5f, 18);
-		var particleMesh = new ParticleMesh(positions, maxParticleCount);
-		spaceshipParticleEmitter = new SpaceshipParticleEmitter(player, particleMesh, particleTexture);
+		try (var particleData = new ParticleData(ShapeUtils.generateCircleVertices(0.5f, 18), maxParticleCount)) {
+			var particleMesh = new ParticleMesh(particleData);
+			spaceshipParticleEmitter = new SpaceshipParticleEmitter(player, particleMesh, particleTexture);
+		}
 	}
 	
 	private void initLasers() {
 		String laserModelId = "laser";
-		var neonMaterial = new EmissiveMaterial(new Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-		StaticMesh bulletMesh = ParShapesLoader.loadFromBuilder(builder -> builder
+		var neonMaterial = new SimpleMaterial();
+		float bulletScale = 40.0f;
+		var bulletMesh = ParShapesLoader.loadFromBuilder(builder -> builder
 				.createCapsule()
-				.scale(0.2f, 0.2f, 0.2f)
-				.rotate((float) toRadians(90), new float[] {1, 0, 0})
+				.scale(0.2f, bulletScale, 0.2f)
+				.rotate(Math.toRadians(90), new float[] {1, 0, 0})
+				.translate(0.0f, 0.0f, bulletScale)
 				.build(ParShapesLoader.STATIC_MESH_BUILDER));
-		neonMaterial.addMesh(bulletMesh);
-		var bulletModel = new Model(laserModelId, neonMaterial);
-		staticModels.add(bulletModel);
+		var bulletModel = new StaticModel(laserModelId, Map.of(neonMaterial, List.of(bulletMesh)));
+		emissiveModels.add(bulletModel);
 		
 		SoundBuffer buffer = new SoundBuffer(SOUNDS.with("blaster-2.ogg"));
 		addSoundBuffer(laserModelId, buffer);
@@ -237,47 +263,33 @@ public class SpaceScene extends Scene {
 	private void initRocks() {
 		float asteroidFieldMin = -1500f;
 		float asteroidFieldMax = 1500f;
-		
+
 		for (int i = 0; i < 5; i++) {
 			var rockMaterial = new SimpleMaterial("asteroid", "asteroidSpec", 2);
 			String instanceRockId = "irock" + i;
-			InstancedMesh instanceRockMesh = ParShapesLoader.loadInstancedBuilder(new ParShapesBuilder().createRock(random.nextInt(), 1), 100);
-			rockMaterial.addMesh(instanceRockMesh);
-			var instanceRockModel = new Model(instanceRockId, rockMaterial);
+			StaticInstancedMesh instanceRockMesh = ParShapesLoader.loadInstancedBuilder(new ParShapesBuilder().createRock(random.nextInt(), 1), 100);
+			var instanceRockModel = new StaticModel(instanceRockId, Map.of(rockMaterial, List.of(instanceRockMesh)));
 			instancedModels.add(instanceRockModel);
-			//var instanceRockBody =  new BodyConstraints(new AABBf(instanceRockMesh.getAabbMin(), instanceRockMesh.getAabbMax()), 0x0, 0x0); // TODO Do instanced rocks need accurate AABBs?
-			var instanceRockBody =  new BodyConstraints(new AABBf(), 0x0, 0x0);
-			
-			var rockModelViewMatrix = new Matrix4f();
-			var rockNormalMatrix = new Matrix4f();
+			var instanceRockBody = new BodyConstraints(instanceRockMesh.getBoundingBox(), 0x0, 0x0);
 
-			List<SpaceEntity> rocks = IntStream.range(0, 1000)
-					.mapToObj(j -> new SpaceEntity(
-							new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
-							new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
-							(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
-							instanceRockId,
-							new Body(instanceRockBody)))
-					.toList();
-			
-			instanceRockMesh.update(rocks, (rock, index) -> {
-				addEntity(rock);
+			IntStream.range(0, 100)
+			.forEach(rockIndex -> {
+				var rockEntity = new SpaceEntity(
+						new Vector3f(random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax), random.nextFloat(asteroidFieldMin, asteroidFieldMax)),
+						new AxisAngle4f(Math.toRadians(random.nextFloat() * 360), random.nextFloat(), random.nextFloat(), random.nextFloat()), 
+						(random.nextFloat() > 0.8f ? random.nextInt(5, 10) : 1),
+						instanceRockId,
+						new Body(instanceRockBody));
 				
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					FloatBuffer instanceMatrix = stack.mallocFloat(16);
-					FloatBuffer instanceNormal = stack.mallocFloat(16);
-					rock.getModelMatrix().get(instanceMatrix);
 
-					rock.getModelMatrix().mul(getViewMatrix(), rockModelViewMatrix);
-					rockModelViewMatrix.invert().transpose(rockNormalMatrix);
-					rockNormalMatrix.get(instanceNormal);
-
-					instanceRockMesh.updateInstanceBuffer(5, index * 16L * Float.BYTES, instanceMatrix);
-					instanceRockMesh.updateInstanceBuffer(6, index * 16L * Float.BYTES, instanceNormal);
+					rockEntity.getModelMatrix().get(instanceMatrix);
+					instanceRockMesh.updateInstanceBuffer(rockIndex * 16L * Float.BYTES, instanceMatrix);
 				}
+				addEntity(EntityType.SCENERY, rockEntity);
 			});
-			
-			VAO.unbind();
+
 		}
 	}
 	
@@ -286,9 +298,9 @@ public class SpaceScene extends Scene {
 //		var alienMaterial = new Material(new Vector4f(0.0f, 0.8f, 0.0f, 1.0f));
 //		Mesh alienMesh = new ParShapesBuilder().createSphere(2).scale(0.25f, 0.25f, 0.25f).build();
 //		var alienModel = new Model(alienModelId, alienMesh, alienMaterial);
-		var alienModel = ModelLoader.loadModel(alienModelId, MODELS.with("bunny.obj"), textureCache, false);
+		StaticModel alienModel = ModelLoader.loadModel(alienModelId, MODELS.with("bunny.obj"), textureCache);
 		addModel(alienModel);
-		var alienBodyAABB = alienModel.getAabb();
+		var alienBodyAABB = alienModel.getBoundingBox();
 		var alienBodyConstraints = new BodyConstraints(alienBodyAABB, 0x10, 0x0);
 		
 		for (int i = 0; i < 100; i++) {
@@ -298,7 +310,7 @@ public class SpaceScene extends Scene {
 					0.5f,
 					alienModelId,
 					new Body(alienBodyConstraints));
-			addEntity(enemy);
+			addEntity(EntityType.ENEMY, enemy);
 		}
 	}
 	
@@ -306,40 +318,69 @@ public class SpaceScene extends Scene {
 	 * 
 	 */
 	public void cleanup() {
-		staticModels.forEach(Model::cleanup);
-		instancedModels.forEach(Model::cleanup);
-		animatedModels.forEach(Model::cleanup);
-		getPlanets().forEach(Planet::cleanup);
+		staticModels.forEach(StaticModel::cleanup);
+		emissiveModels.forEach(StaticModel::cleanup);
+		instancedModels.forEach(StaticModel::cleanup);
+		animatedModels.forEach(AnimatedModel::cleanup);
+		planets.forEach(Planet::cleanup);
 		playerSoundSources.forEach(SoundSource::cleanup);
 		soundBufferCache.values().forEach(SoundBuffer::cleanup);
+		
+		entityMap.clear();
+		planets.clear();
+		soundBufferCache.clear();
+		playerSoundSources.clear();
+		entitySoundSources.clear();
+		
+		staticModels.clear();
+		emissiveModels.clear();
+		instancedModels.clear();
+		animatedModels.clear();
+	}
+
+	@Override
+	public void resize(int width, int height) {
+		// TODO Auto-generated method stub
+		
 	}
 	
 	/**
 	 * @return staticModels
 	 */
-	public List<Model> getStaticModels() {
+	public List<StaticModel> getStaticModels() {
 		return staticModels;
 	}
 	
 	/**
-	 * @return
+	 * @return animatedModels
 	 */
-	public List<Model> getAnimatedModels() {
+	public List<AnimatedModel> getAnimatedModels() {
 		return animatedModels;
 	}
 	
 	/**
-	 * @return
+	 * @return emissiveModels
 	 */
-	public List<Model> getStaticInstancedModels() {
+	public List<StaticModel> getEmissiveModels() {
+		return emissiveModels;
+	}
+	
+	/**
+	 * @return instancedModels
+	 */
+	public List<StaticModel> getStaticInstancedModels() {
 		return instancedModels;
 	}
 	
 	/**
 	 * @param model
 	 */
-	public void addModel(Model model) {
-		staticModels.add(model);
+	public void addModel(Model<?, ?> model) {
+		switch (model) {
+			case StaticModel staticModel -> staticModels.add(staticModel);
+			case AnimatedModel animatedModel -> animatedModels.add(animatedModel);
+			default -> throw new IllegalArgumentException("Can't add model of type: " + model.getClass());
+		}
 	}
 	
 	/**
@@ -377,35 +418,31 @@ public class SpaceScene extends Scene {
 	}
 	
 	/**
-	 * @return the entities
+	 * @return planets
 	 */
-	public List<Entity> getEntities() {
-		return entities;
+	public List<Planet> getPlanets() {
+		return planets;
 	}
 	
 	/**
+	 * @param type
+	 * @return
+	 */
+	public List<SpaceEntity> getEntities(EntityType type) {
+		return entityMap.get(type);
+	}
+	
+	/**
+	 * @param type 
 	 * @param entity
 	 */
-	public void addEntity(Entity entity) {
-		entities.add(entity);
-	}
-	
-	/**
-	 * @return a stream of {@link SpaceEntity} that contains all planets in the scene.
-	 */
-	public Stream<Planet> getPlanets() {
-		return entities.stream()
-				.filter(Planet.class::isInstance)
-				.map(Planet.class::cast);
-	}
-	
-	/**
-	 * @return a stream of {@link SpaceEntity} that contains all space entities in the scene.
-	 */
-	public Stream<SpaceEntity> getSpaceEntities() {
-		return entities.stream()
-				.filter(SpaceEntity.class::isInstance)
-				.map(SpaceEntity.class::cast);
+	public void addEntity(EntityType type, SpaceEntity entity) {
+		if (type == EntityType.PLAYER) {
+			entityMap.put(type, List.of(entity));
+			setPlayer(entity);
+		} else {
+			entityMap.get(type).add(entity);
+		}
 	}
 	
 	/**
@@ -418,7 +455,7 @@ public class SpaceScene extends Scene {
 	/**
 	 * @param player
 	 */
-	public void setPlayer(SpaceEntity player) {
+	private void setPlayer(SpaceEntity player) {
 		this.player = player;
 	}
 	
@@ -457,5 +494,4 @@ public class SpaceScene extends Scene {
 	public SpaceshipParticleEmitter getSpaceshipParticleEmitter() {
 		return spaceshipParticleEmitter;
 	}
-	
 }

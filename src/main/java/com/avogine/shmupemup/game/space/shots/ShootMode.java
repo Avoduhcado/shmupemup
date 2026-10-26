@@ -7,7 +7,7 @@ import org.joml.*;
 import org.joml.primitives.AABBf;
 
 import com.avogine.audio.data.*;
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 import com.avogine.shmupemup.scene.entities.physics.*;
 import com.avogine.shmupemup.scene.entities.physics.data.TimeToLive;
@@ -19,6 +19,9 @@ public abstract sealed class ShootMode<T> permits SingleShot, DoubleShot, HelixS
 
 	protected SpaceEntity shooter;
 
+	/**
+	 * In meters per second where 1 meter is 1 unit of size in the game world.
+	 */
 	private float shotSpeed;
 	
 	private float shotTTL;
@@ -29,8 +32,8 @@ public abstract sealed class ShootMode<T> permits SingleShot, DoubleShot, HelixS
 	 */
 	protected ShootMode(SpaceEntity shooter) {
 		this.shooter = shooter;
-		shotSpeed = 100;
-		shotTTL = 2.25f;
+		shotSpeed = 400f;
+		shotTTL = 0.75f;
 		shotDelay = 1f;
 	}
 	
@@ -40,13 +43,13 @@ public abstract sealed class ShootMode<T> permits SingleShot, DoubleShot, HelixS
 	 * @param soundSourceSupplier 
 	 * @return 
 	 */
-	public abstract T shoot(Model bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier);
+	public abstract T shoot(StaticModel bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier);
 	
 	protected SpaceEntity createBullet(Vector3f position, AxisAngle4f orientation, String modelId, AABBf bulletAABB) {
 		var bulletBody = new Body(
 				new BodyConstraints(
 						bulletAABB,
-						new Quaternionf(orientation).transformPositiveZ(new Vector3f()).mul(shotSpeed), // TODO shotSpeed + shooter.getVelocity ?
+						new Quaternionf(orientation).transformPositiveZ(new Vector3f()).mul(shotSpeed),
 						0f,
 						shooter.getBody().getCategoryBitMask(),
 						0x11 ^ shooter.getBody().getCategoryBitMask()));

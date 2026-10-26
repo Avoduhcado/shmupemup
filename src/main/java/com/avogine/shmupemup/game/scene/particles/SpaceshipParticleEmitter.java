@@ -1,10 +1,12 @@
 package com.avogine.shmupemup.game.scene.particles;
 
+import java.nio.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.joml.Random;
 import org.joml.Vector3f;
+import org.lwjgl.system.MemoryStack;
 
 import com.avogine.game.scene.particles.ParticleEmitter;
 import com.avogine.render.opengl.particle.ParticleMesh;
@@ -65,23 +67,26 @@ public class SpaceshipParticleEmitter implements ParticleEmitter {
 	
 	@Override
 	public void update(float delta) {
-		particles.removeIf(p -> p.life().get() <= 0);
+		// Delta should currently be in thousandth of a second, so multiply by 1000 and subtract
+		particles.removeIf(p -> p.life().addAndGet((int) (-1000 * delta)) <= 0);
 		
 		// XXX(Avoroutines) This could be handled in a coroutine to start up/slow down
 		if (spaceship.getBody().getAcceleration().lengthSquared() > 0) {
 			emitParticles(10);
 		}
 		
-		for (var p : particles) {
-			// Delta should currently be in thousandths of a second, so multiply by 1000 and subtract
-			if (p.life().addAndGet((int) (-1000 * delta)) <= 0) {
-				continue;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			FloatBuffer positionsBuffer = stack.mallocFloat(particles.size() * 4);
+			for (var p : particles) {
+				p.position().set(spaceship.getPosition());
+
+				p.speed().add(p.speed().mul(delta * 9.81f, particleVelocity));
+				p.position().add(p.speed().mul(delta, particleVelocity));
+				
+				positionsBuffer.put(p.position.x).put(p.position.y).put(p.position.z).put(p.size);
 			}
 			
-			p.position().set(spaceship.getPosition());
-			
-			p.speed().add(p.speed().mul(delta * 9.81f, particleVelocity));
-			p.position().add(p.speed().mul(delta, particleVelocity));
+			particleMesh.updatePositions(positionsBuffer.flip());
 		}
 		
 		getParticleMesh().setCurrentInstances(getParticles().size());
@@ -93,15 +98,23 @@ public class SpaceshipParticleEmitter implements ParticleEmitter {
 			Random randy = new Random();
 			float spread = 0.5f;
 			Vector3f mainDir = spaceship.getOrientation().transformPositiveZ(new Vector3f()).negate();
-			for (int i = 0; i < count; i++) {
-				var randomDir = new Vector3f(randy.nextFloat() - 0.5f, randy.nextFloat() - 0.5f, randy.nextFloat() - 0.5f).mul(spread);
-				particles.add(new SpaceParticle(
-						new Vector3f(),
-						mainDir.add(randomDir, new Vector3f()),
-						(byte) (randy.nextInt(128) + 127), (byte) randy.nextInt(100), (byte) randy.nextInt(30), (byte) randy.nextInt(255),
-						randy.nextFloat() * 0.5f, randy.nextFloat(), randy.nextFloat(),
-						new AtomicInteger(500)
-						));
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				ByteBuffer colorsBuffer = stack.malloc(count * 4);
+				
+				for (int i = 0; i < count; i++) {
+					var randomDir = new Vector3f(randy.nextFloat() - 0.5f, randy.nextFloat() - 0.5f, randy.nextFloat() - 0.5f).mul(spread);
+					var randomColor = new byte[] {
+							(byte) (randy.nextInt(128) + 127), (byte) randy.nextInt(100), (byte) randy.nextInt(30), (byte) randy.nextInt(255)
+					};
+					particles.add(new SpaceParticle(
+							new Vector3f(),
+							mainDir.add(randomDir, new Vector3f()),
+							randomColor[0], randomColor[1], randomColor[2], randomColor[3],
+							randy.nextFloat() * 0.35f, randy.nextFloat(), randy.nextFloat(),
+							new AtomicInteger(500)));
+					colorsBuffer.put(randomColor);
+				}
+				particleMesh.updateColors((particles.size() - count) * 4L, colorsBuffer.flip());
 			}
 		}
 	}

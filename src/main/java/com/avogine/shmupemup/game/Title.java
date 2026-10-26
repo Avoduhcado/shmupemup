@@ -4,54 +4,55 @@ import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11C.*;
 import static org.lwjgl.opengl.GL14C.*;
 
-import java.util.function.Supplier;
-
-import com.avogine.audio.Audio;
 import com.avogine.audio.data.*;
 import com.avogine.game.scene.Scene;
 import com.avogine.game.ui.NuklearGUI;
 import com.avogine.io.Window;
-import com.avogine.render.SceneRender;
+import com.avogine.render.Render;
 import com.avogine.shmupemup.game.Title.*;
 import com.avogine.shmupemup.game.title.TitleMenu;
 import com.avogine.util.resource.ResourceConstants;
 
 /**
- *
+ * @param scene 
+ * @param render 
  */
-public final class Title extends SpaceGameState<TitleScene, TitleRender> {
+public record Title(TitleScene scene, TitleRender render) implements ShmupGameState<TitleScene, TitleRender> {
 
-	/**
-	 *
-	 */
 	public static class TitleScene extends Scene {
+		
+		private final NuklearGUI gui;
 		
 		private SoundBuffer bgmBuffer;
 		private SoundSource bgmSource;
 		
+		private TitleMenu titleMenu;
+		
 		private boolean startGame;
 //		private SaveGame saveToLoad;
-		
+
 		/**
 		 * @param width 
 		 * @param height 
 		 */
-		public TitleScene(int width, int height) {
+		public TitleScene(int width, int height, NuklearGUI gui) {
 			super(width, height);
+			this.gui = gui;
 		}
 		
-		/**
-		 * 
-		 */
-		public void init() {
+		@Override
+		public void init(Window window) {
+			new SoundListener();
+			
 			bgmBuffer = new SoundBuffer(ResourceConstants.SOUNDS.with("Menu.ogg"));
 			bgmSource = new SoundSource(true, false);
 			bgmSource.setBuffer(bgmBuffer.getBufferID());
+			bgmSource.play();
+			
+			titleMenu = new TitleMenu(gui, window.getWidth(), window.getHeight(), this::setStartGame, saveGamesExist());
 		}
 		
-		/**
-		 * 
-		 */
+		@Override
 		public void cleanup() {
 			if (bgmSource != null) {
 				bgmSource.cleanup();
@@ -59,6 +60,14 @@ public final class Title extends SpaceGameState<TitleScene, TitleRender> {
 			if (bgmBuffer != null) {
 				bgmBuffer.cleanup();
 			}
+			if (titleMenu != null) {
+				titleMenu.cleanup();
+			}
+		}
+		
+		@Override
+		public void resize(int width, int height) {
+			titleMenu.resize(width, height);
 		}
 		
 		/**
@@ -88,7 +97,7 @@ public final class Title extends SpaceGameState<TitleScene, TitleRender> {
 		public void setStartGame(boolean startGame) {
 			this.startGame = startGame;
 		}
-
+		
 		/**
 		 * @return true if there are any save games available to load from.
 		 */
@@ -110,13 +119,10 @@ public final class Title extends SpaceGameState<TitleScene, TitleRender> {
 		public void setSaveToLoad() {
 			// Not implemented
 		}
-		
+
 	}
 	
-	/**
-	 *
-	 */
-	public static class TitleRender implements SceneRender<TitleScene> {
+	public static class TitleRender implements Render<TitleScene> {
 		
 		@Override
 		public void init(Window window) {
@@ -136,55 +142,18 @@ public final class Title extends SpaceGameState<TitleScene, TitleRender> {
 		public void cleanup() {
 			// No cleanup necessary
 		}
-		
-	}
 
-	private final Audio audio;
-	private final NuklearGUI nuklearContext;
-	
-	private TitleMenu titleMenu;
+		@Override
+		public void resize(int width, int height) {
+			// Nothing to resize
+		}
+	}
 	
 	/**
-	 * @param audio 
-	 * @param nuklearContext 
-	 * 
+	 * @param gui 
 	 */
-	public Title(Audio audio, NuklearGUI nuklearContext) {
-		this.audio = audio;
-		this.nuklearContext = nuklearContext;
-		
-		scene = new TitleScene(640, 360);
-		render = new TitleRender();
-	}
-
-	@Override
-	public void init(Window window) {
-		render.init(window);
-		scene.init();
-		
-		initAudio();
-		titleMenu = new TitleMenu(nuklearContext, scene);
-		titleMenu.resize(window.getWidth(), window.getHeight());
-	}
-	
-	private void initAudio() {
-		audio.setListener(new SoundListener());
-		audio.addSoundBuffer(scene.getBgmBuffer());
-		audio.addSoundSource("BGM", scene.getBgmSource());
-		
-		audio.playSoundSource("BGM");
-	}
-	
-	@Override
-	public void cleanup() {
-		render.cleanup();
-		scene.cleanup();
-		
-		audio.removeSoundSource("BGM");
-		audio.getSoundBuffers().remove(scene.getBgmBuffer());
-		
-		titleMenu.cleanup();
-		nuklearContext.removeUIElement(titleMenu);
+	public Title(NuklearGUI gui) {
+		this(new TitleScene(640, 480, gui), new TitleRender());
 	}
 	
 	/**
@@ -192,28 +161,18 @@ public final class Title extends SpaceGameState<TitleScene, TitleRender> {
 	 * @param height
 	 */
 	public void resize(int width, int height) {
-		titleMenu.resize(width, height);
+		scene.resize(width, height);
+		render.resize(width, height);
 	}
 	
 	/**
 	 * Return true if the player selected to start a game.
 	 * </p>
-	 * This should be used to signal a transition from {@link Title} to the next {@link SpaceGameState} containing
+	 * This should be used to signal a transition from {@link Title} to the next {@link ShmupGameState} containing
 	 * the necessary logic to "play" the game.
 	 * @return true if the player selected to start a game.
 	 */
 	public boolean shouldStartGame() {
 		return scene.isStartGame();
 	}
-	
-	/**
-	 * @return a {@link Supplier} that will produce a new, un-initialized {@link MainGame} state.
-	 */
-	public Supplier<MainGame> startGame() {
-//		if (scene.getSaveToLoad() != null) {
-//			return () -> new MainGame(audio, scene.getSaveToLoad());
-//		}
-		return () -> new MainGame(audio);
-	}
-	
 }

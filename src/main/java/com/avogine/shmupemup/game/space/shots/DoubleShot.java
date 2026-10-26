@@ -7,7 +7,7 @@ import org.joml.*;
 import org.joml.Math;
 
 import com.avogine.audio.data.*;
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**
@@ -29,17 +29,17 @@ public final class DoubleShot extends ShootMode<List<SpaceEntity>> {
 	}
 	
 	@Override
-	public List<SpaceEntity> shoot(Model bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
+	public List<SpaceEntity> shoot(StaticModel bulletModel, SoundBuffer bulletSoundBuffer, Supplier<Optional<SoundSource>> soundSourceSupplier) {
 		var bulletEntityLeft = createBullet(
 				new Vector3f().set(shooter.getOrientation().transform(-0.5f, 0, 0, leftOffset).add(shooter.getPosition())),
 				new Quaternionf().set(shooter.getOrientation()).get(new AxisAngle4f()),
 				bulletModel.getId(),
-				bulletModel.getAabb());
+				bulletModel.getBoundingBox());
 		var bulletEntityRight = createBullet(
 				new Vector3f().set(shooter.getOrientation().transform(0.5f, 0, 0, rightOffset).add(shooter.getPosition())),
 				new Quaternionf().set(shooter.getOrientation()).get(new AxisAngle4f()),
 				bulletModel.getId(),
-				bulletModel.getAabb());
+				bulletModel.getBoundingBox());
 		
 		soundSourceSupplier.get().ifPresent(soundSource -> {
 			soundSource.setBuffer(bulletSoundBuffer.getBufferID());

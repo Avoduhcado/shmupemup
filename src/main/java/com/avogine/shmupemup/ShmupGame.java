@@ -1,20 +1,12 @@
 package com.avogine.shmupemup;
 
-import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL11C.glViewport;
-
 import java.util.List;
 
-import org.lwjgl.openal.AL11;
-
 import com.avogine.Avogine;
-import com.avogine.audio.Audio;
-import com.avogine.game.Game;
-import com.avogine.game.state.StateSwappable;
-import com.avogine.game.ui.NuklearGUI;
+import com.avogine.game.AvoGame;
+import com.avogine.game.util.Stateful;
 import com.avogine.io.Window;
 import com.avogine.io.config.WindowPreferences;
-import com.avogine.io.listener.WindowResizeListener;
 import com.avogine.render.opengl.font.Font;
 import com.avogine.render.opengl.font.util.FontCache;
 import com.avogine.render.opengl.ui.*;
@@ -23,17 +15,11 @@ import com.avogine.shmupemup.game.*;
 /**
  * 
  */
-public class ShmupGame implements Game, StateSwappable<SpaceGameState<?, ?>>, WindowResizeListener {
-
+public class ShmupGame extends AvoGame<ShmupGameState<?, ?>> implements Stateful<ShmupGameState<?, ?>> {
+	
 	private final FontCache fontCache;
 	private final TextRender textRender;
-	
 	private final NuklearRender nuklearRender;
-	
-	private final Audio audio;
-	private final NuklearGUI gui;
-	
-	private final GameStateQueue<SpaceGameState<?, ?>> gameStateQueue;
 	
 	private final String ipsum = """
 			Lorem ipsum odor amet, consectetuer adipiscing elit. Condimentum
@@ -61,87 +47,49 @@ public class ShmupGame implements Game, StateSwappable<SpaceGameState<?, ?>>, Wi
 	 * 
 	 */
 	public ShmupGame() {
+		super();
 		fontCache = new FontCache();
 		textRender = new TextRender();
 		nuklearRender = new NuklearRender();
-		
-		audio = new Audio();
-		
-		gui = new NuklearGUI();
-		
-		gameStateQueue = new GameStateQueue<>(new Title(audio, gui));
 	}
 	
 	@Override
-	public void init(Window window) {
-		gui.init(window);
-		initAudio();
-		currentState().init(window);
-		
-		textRender.init(window.getFbWidth(), window.getFbHeight(), fontCache);
+	protected void onInit(Window window) {
+		textRender.init(window.getWidth(), window.getHeight(), fontCache);
 		nuklearRender.init(window);
 		
-		window.addResizeListener(this);
+		transitionTo(new Title(gui), window);
 	}
 	
-	private void initAudio() {
-		audio.init();
-		audio.setAttenuationModel(AL11.AL_EXPONENT_DISTANCE);
-		audio.setListenerVolume(0.1f);
-	}
-
 	@Override
-	public void input(Window window) {
-		gui.input(window);
-		gui.layoutElements(window);
+	protected void onCleanup() {
+		state.cleanup();
 		
-		switch (currentState()) {
-			case Title title when title.shouldStartGame() -> gameStateQueue.queueState(title.startGame());
-			case Title title -> {
-				// Nothing to do
-			}
-			case MainGame mainGame when mainGame.shouldRevertToTitle() -> gameStateQueue.queueState(() -> new Title(audio, gui));
+		textRender.cleanup();
+		fontCache.cleanup();
+		nuklearRender.cleanup();
+	}
+	
+	@Override
+	protected void onInput(Window window) {
+		switch (state) {
+			case Title title when title.shouldStartGame() -> transitionTo(new MainGame(), window);
+			case MainGame mainGame when mainGame.shouldRevertToTitle() -> transitionTo(new Title(gui), window);
 			case MainGame mainGame -> mainGame.input(window);
-			case Credits credits -> {
-				// Not implemented
-			}
-		}
-		
-		if (hasQueuedGameState()) {
-			swapGameState(window);
+			default -> {}
 		}
 	}
 
 	@Override
 	public void update(float interval) {
-		switch (currentState()) {
-			case Title title -> {
-				// Wait for user to navigate title menu
-			}
-			case MainGame mainGame -> mainGame.update(interval);
-			case Credits credits -> {
-				// Not implemented
-			}
-		}
+		state.update(interval);
 	}
 
 	@Override
-	public void render(Window window) {
-		window.makeCurrent();
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glViewport(0, 0, window.getFbWidth(), window.getFbHeight());
+	protected void onRender(Window window) {
+		state.render(window);
 		
-		switch (currentState()) {
-			case Title title -> title.getRender().render(window, title.getScene());
-			case MainGame mainGame -> mainGame.getRender().render(window, mainGame.getScene());
-			case Credits credits -> {
-				// Not implemented
-			}
-		}
-		
-		// TODO Should GUI and Text rendering be abstracted to the Avogine/Window level?
 		nuklearRender.render(gui);
-
 		textRender.renderText(0, 0, "FPS: " + window.getFps());
 //		float nextLine = 24.0f;
 //		for (int i = 0; i < ipsumLines.size(); i++) {
@@ -156,62 +104,28 @@ public class ShmupGame implements Game, StateSwappable<SpaceGameState<?, ?>>, Wi
 	}
 	
 	@Override
-	public void cleanup() {
-		currentState().cleanup();
-		
-		textRender.cleanup();
-		fontCache.cleanup();
-		nuklearRender.cleanup();
-		
-		audio.cleanup();
-		
-		gui.cleanup();
-	}
-	
-	@Override
-	public SpaceGameState<?, ?> currentState() {
-		return gameStateQueue.getCurrentState();
-	}
-	
-	@Override
-	public boolean hasQueuedGameState() {
-		return gameStateQueue.hasQueuedState();
-	}
-	
-	@Override
-	public void swapGameState(Window window) {
-		gameStateQueue.swapState(window);
-	}
-	
-	@Override
-	public void windowFramebufferResized(int width, int height) {
+	public void resize(int width, int height) {
 		textRender.resize(width, height);
 		nuklearRender.resize(width, height);
 		
-		switch (currentState()) {
+		switch (state) {
 			case Title title -> title.resize(width, height);
-			case MainGame mainGame -> {
-				// TODO Calculate the resolution offsets globally for ShmupGame here?
-			}
-			case Credits credits -> {
-				// Not implemented
-			}
+			default -> {}
 		}
 	}
-	
-	@Override
-	public int getTargetUps() {
-		return 30;
-	}
 
+	@Override
+	public void setState(ShmupGameState<?, ?> state) {
+		this.state = state;
+	}
+	
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		var window = new Window("Shmup-em-up", new WindowPreferences(1280, 720, false, 0, false, 144, 15));
 		var game = new ShmupGame();
 		
-		var avogine = new Avogine(window, game);
+		var avogine = new Avogine("Shmup-em-up", new WindowPreferences(1280, 720, false, 0, false, 144, 15), game);
 		avogine.start();
 	}
 

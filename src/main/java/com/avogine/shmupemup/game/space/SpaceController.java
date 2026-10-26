@@ -15,11 +15,12 @@ import com.avogine.io.*;
 import com.avogine.io.event.KeyEvent;
 import com.avogine.io.event.MouseEvent.MouseButtonEvent;
 import com.avogine.io.listener.InputAdapter;
-import com.avogine.render.opengl.model.Model;
+import com.avogine.render.opengl.model.StaticModel;
 import com.avogine.shmupemup.game.scene.controller.FollowCamController;
 import com.avogine.shmupemup.game.space.shots.*;
 import com.avogine.shmupemup.scene.SpaceScene;
-import com.avogine.shmupemup.scene.entities.*;
+import com.avogine.shmupemup.scene.SpaceScene.EntityType;
+import com.avogine.shmupemup.scene.entities.SpaceEntity;
 import com.avogine.shmupemup.scene.entities.physics.data.TimeToLive;
 
 /**
@@ -30,6 +31,8 @@ public class SpaceController extends InputAdapter implements Terminable {
 	// TODO Source from window
 	private final int width = 640;
 	private final int height = 480;
+	
+	private Runnable cleanupFunction;
 	
 	// Cursor params
 	private long crosshairCursor;
@@ -110,6 +113,18 @@ public class SpaceController extends InputAdapter implements Terminable {
 		captureCursor(window);
 		
 		window.addInputListener(this);
+		
+		cleanupFunction = () -> {
+			window.removeInputListener(this);
+			window.addRegisterable(terminate());
+		};
+	}
+	
+	/**
+	 * 
+	 */
+	public void cleanup() {
+		cleanupFunction.run();
 	}
 	
 	@Override
@@ -270,48 +285,35 @@ public class SpaceController extends InputAdapter implements Terminable {
 	}
 	
 	private void updateBullets(SpaceScene scene, float delta) {
-		scene.getSpaceEntities()
-		.map(entity -> entity.getBody().getBodyData())
-		.filter(TimeToLive.class::isInstance)
-		.map(TimeToLive.class::cast)
-		.forEach(ttl -> ttl.decrease(delta));
+		scene.getEntities(EntityType.PROJECTILE).forEach(entity -> {
+			if (entity.getBody().getBodyData() instanceof TimeToLive ttl) {
+				ttl.decrease(delta);
+			}
+		});
 		
-		var entitiesToRemove = scene.getSpaceEntities()
-				.filter(entity -> entity.getBody().getBodyData() instanceof TimeToLive ttl && ttl.getTtl() <= 0f)
-				.toList();
-		
-		scene.getEntities().removeAll(entitiesToRemove);
+		scene.getEntities(EntityType.PROJECTILE).removeIf(entity -> entity.getBody().getBodyData() instanceof TimeToLive ttl && ttl.getTtl() <= 0.0f);
 	}
 	
 	private void playerShoot(SpaceScene scene, float delta) {
 		if (shooting && shootCooldown == 0) {
 			shootCooldown = shootMode.getShotDelay();
 			
-			Model laserModel = scene.getStaticModels().stream().filter(model -> model.getId().matches("laser")).findFirst().orElse(null);
+			StaticModel laserModel = scene.getEmissiveModels().stream().filter(model -> model.getId().matches("laser")).findFirst().orElse(null);
 			SoundBuffer laserSoundBuffer = scene.getSoundBufferCache().get("laser");
 			
 			switch (shootMode) {
-				case SingleShot shot -> scene.addEntity(shot.shoot(laserModel, laserSoundBuffer, scene::getAvailablePlayerSoundSource));
+				case SingleShot shot -> scene.addEntity(EntityType.PROJECTILE, shot.shoot(laserModel, laserSoundBuffer, scene::getAvailablePlayerSoundSource));
 				case DoubleShot shot -> shot.shoot(laserModel, laserSoundBuffer, scene::getAvailablePlayerSoundSource)
-				.forEach(scene::addEntity);
+				.forEach(entity -> scene.addEntity(EntityType.PROJECTILE, entity));
 				case HelixShot shot -> {
 					shot.warmUpShotDelay();
-					scene.addEntity(shot.shoot(laserModel, laserSoundBuffer, scene::getAvailablePlayerSoundSource));
+					scene.addEntity(EntityType.PROJECTILE, shot.shoot(laserModel, laserSoundBuffer, scene::getAvailablePlayerSoundSource));
 				}
 			}
 		} else if (!shooting && shootMode instanceof HelixShot helix) {
 			helix.windDownShotDelay(delta);
 		}
 		shootCooldown = Math.clamp(shootCooldown - delta, 0, shootCooldown);
-	}
-	
-	private void processSecretWormhole(SpaceScene scene, Transform playerTransform) {
-		scene.getSpaceEntities()
-		.filter(entity -> entity.getPosition().z > playerTransform.position().z + 5)
-		.forEach(entity -> {
-			entity.getPosition().sub(0, 0, 100f * entity.getScale1f());
-			entity.updateModelMatrix();
-		});
 	}
 	
 	/**

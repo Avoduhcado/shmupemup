@@ -1,26 +1,25 @@
 package com.avogine.shmupemup.render;
 
-import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL11C.*;
+import static org.lwjgl.opengl.GL14C.GL_DEPTH_COMPONENT24;
 
-import java.nio.*;
+import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.stream.Stream;
 
 import org.joml.*;
-import org.lwjgl.opengl.*;
-import org.lwjgl.system.MemoryUtil;
 
 import com.avogine.entity.AnimationData;
-import com.avogine.render.model.mesh.Boundable;
-import com.avogine.render.opengl.*;
-import com.avogine.render.opengl.model.material.Material;
-import com.avogine.render.opengl.model.mesh.Mesh;
-import com.avogine.render.opengl.model.util.ModelLoader;
+import com.avogine.render.model.mesh.Instanceable;
+import com.avogine.render.opengl.FBO;
+import com.avogine.render.opengl.FBO.FramebufferTexture;
+import com.avogine.render.opengl.model.mesh.StaticMesh;
+import com.avogine.render.opengl.model.util.*;
 import com.avogine.render.opengl.shader.*;
 import com.avogine.render.opengl.texture.Texture;
-import com.avogine.shmupemup.render.data.EmissiveMaterial;
+import com.avogine.shmupemup.game.scene.particles.SpaceshipParticleEmitter;
 import com.avogine.shmupemup.render.shaders.*;
 import com.avogine.shmupemup.scene.SpaceScene;
+import com.avogine.shmupemup.scene.SpaceScene.EntityType;
 import com.avogine.shmupemup.scene.entities.SpaceEntity;
 
 /**
@@ -34,16 +33,28 @@ public class SpaceEntityRender {
 		Matrix4f zeroMatrix = new Matrix4f().zero();
 		Arrays.fill(DEFAULT_BONES_MATRICES, zeroMatrix);
 	}
-
+	
 	private SimpleShader shader;
 	private AnimatedShader animShader;
 	private NeonShader neonShader;
 	private SimpleInstanceShader instanceShader;
 	private ParticleShader particleShader;
 	
+	private BasicShader basicShader;
+	
 	private SceneDepthShader depthShader;
 	private Texture depthTexture;
-	private FBO depthFBO;
+	private FBO depth;
+	private StaticMesh depthCube;
+	private final Matrix4f depthMatrix;
+	
+	private final Set<EntityType> simpleStaticTypes = EnumSet.of(EntityType.PLAYER, EntityType.ENEMY, EntityType.SCENERY);
+	private final Set<EntityType> physicalTypes = EnumSet.of(EntityType.PLAYER, EntityType.ENEMY, EntityType.SCENERY, EntityType.NPC);
+	
+	/**
+	 * Rendering is synchronous, so this list is not concurrently modifiable.
+	 */
+	private final List<SpaceEntity> modelEntityList;
 	
 	private final Matrix4f modelViewMatrix;
 	private final Matrix4f normalMatrix;
@@ -54,10 +65,14 @@ public class SpaceEntityRender {
 	 * 
 	 */
 	public SpaceEntityRender() {
+		modelEntityList = new ArrayList<>();
+		
 		modelViewMatrix = new Matrix4f();
 		normalMatrix = new Matrix4f();
 		viewMatrixPosition = new Vector3f();
 		lightPosition = new Vector3f();
+		
+		depthMatrix = new Matrix4f();
 	}
 	
 	/**
@@ -70,28 +85,38 @@ public class SpaceEntityRender {
 		instanceShader = new SimpleInstanceShader();
 		particleShader = new ParticleShader();
 		
+		basicShader = new BasicShader();
+		
 		depthShader = new SceneDepthShader();
 		setupDepthBuffer();
 	}
 	
 	private void setupDepthBuffer() {
-		try {
-			depthFBO = FBO.gen().bind();
+		depthTexture = Texture.gen2D(depthTex -> depthTex
+				.minFilter().nearest()
+				.magFilter().nearest()
+				.wrapST().clampToEdge()
+				.image2D(0, GL_DEPTH_COMPONENT24, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null));
 
-			depthTexture = Texture.gen2D(depth -> depth
-					.texFilterLinear()
-					.texImage2D(GL14.GL_DEPTH_COMPONENT32, 1280, 720, GL11.GL_DEPTH_COMPONENT, GL_FLOAT, (ByteBuffer) null));
-
-			depthFBO.attachTexture2D(GL30.GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture.id(), 0)
-			.validate();
-
-//			int rbo = GL30.glGenRenderbuffers();
-//			GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, rbo);
-//			GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH_COMPONENT32F, 1280, 720);
-//			GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL30.GL_RENDERBUFFER, rbo);
-		} finally {
-			FBO.unbind();
-		}
+		depth = FBO.framebuffer(FramebufferTexture.depth(depthTexture));
+		
+		depth.bind();
+		glDrawBuffer(GL_NONE);
+		glReadBuffer(GL_NONE);
+		depth.unbind();
+		
+		depthCube = ParShapesLoader.loadPlane(15.0f);
+		
+		depthMatrix.translate(0, -5, -5);
+	}
+	
+	private void fillEntityList(String modelID, Set<EntityType> types, SpaceScene scene) {
+		modelEntityList.clear();
+		types.forEach(type -> scene.getEntities(type).forEach(entity -> {
+			if (Objects.equals(entity.getModelId(), modelID)) {
+				modelEntityList.add(entity);
+			}
+		}));
 	}
 	
 	/**
@@ -109,38 +134,31 @@ public class SpaceEntityRender {
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		shader.lightPosition.loadVec3(lightPosition);
 		
-		scene.getStaticModels().stream().forEach(model -> {
-			List<SpaceEntity> entities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
+		scene.getStaticModels().forEach(model -> {
+			fillEntityList(model.getId(), simpleStaticTypes, scene);
 			
-			model.getBlinnPhongMaterials().forEach(material -> {
-				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
-				if (material.getDiffuseTexturePath() != null) {
-					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
-				}
-				diffuseTexture.activate(0);
-				Texture specularMap = scene.getTextureCache().getDefaultTexture();
-				if (material.getSpecularMapPath() != null) {
-					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
-				}
-				specularMap.activate(1);
+			model.getMaterialMap().forEach((material, meshList) -> {
+				scene.getTextureCache().getTextureOrDefault(material.getDiffuseTexturePath()).activate(0);
+				scene.getTextureCache().getTextureOrDefault(material.getSpecularMapPath()).activate(1);
 				shader.specularFactor.loadFloat(material.getSpecularFactor());
-				
-				material.getStaticMeshes().forEach(mesh ->
-					mesh.render(entities, entity -> {
-						shader.model.loadMatrix(entity.getModelMatrix());
-						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
-						modelViewMatrix.invert().transpose(normalMatrix);
-						shader.normalMatrix.loadMatrix(normalMatrix);
-					})
-				);
+
+				meshList.forEach(mesh -> mesh.render(modelEntityList, entity -> shader.model.loadMatrix(entity.getModelMatrix())));
 			});
 		});
-
-		VAO.unbind();
 		
 		shader.unbind();
+		
+//		basicShader.bind();
+//
+//		basicShader.projection.loadMatrix(scene.getProjectionMatrix());
+//		basicShader.view.loadMatrix(scene.getViewMatrix());
+//		
+//		depthTexture.activate(0);
+//		basicShader.model.loadMatrix(depthMatrix);
+//		depthCube.render();
+//		depthTexture.unbind();
+//		
+//		basicShader.unbind();
 	}
 	
 	/**
@@ -156,27 +174,17 @@ public class SpaceEntityRender {
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		animShader.lightPosition.loadVec3(lightPosition);
 		
-		scene.getAnimatedModels().stream()
+		scene.getAnimatedModels()
 		.forEach(model -> {
-			List<SpaceEntity> entities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
+			fillEntityList(model.getId(), EnumSet.of(EntityType.NPC), scene);
 			
-			model.getBlinnPhongMaterials().forEach(material -> {
-				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
-				if (material.getDiffuseTexturePath() != null) {
-					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
-				}
-				diffuseTexture.activate(0);
-				Texture specularMap = scene.getTextureCache().getDefaultTexture();
-				if (material.getSpecularMapPath() != null) {
-					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
-				}
-				specularMap.activate(1);
+			model.getMaterialMap().forEach((material, meshList) -> {
+				scene.getTextureCache().getTextureOrDefault(material.getDiffuseTexturePath()).activate(0);
+				scene.getTextureCache().getTextureOrDefault(material.getSpecularMapPath()).activate(1);
 				animShader.specularFactor.loadFloat(material.getSpecularFactor());
 				
-				material.getAnimatedMeshes().forEach(mesh -> 
-					mesh.render(entities, entity -> {
+				meshList.forEach(mesh -> 
+					mesh.render(modelEntityList, entity -> {
 						AnimationData animationData = entity.getAnimationData();
 						if (animationData == null) {
 							animShader.boneMatrices.loadMatrixArray(DEFAULT_BONES_MATRICES);
@@ -185,47 +193,34 @@ public class SpaceEntityRender {
 						}
 						
 						animShader.model.loadMatrix(entity.getModelMatrix());
-						entity.getModelMatrix().mul(scene.getViewMatrix(), modelViewMatrix);
-						modelViewMatrix.invert().transpose(normalMatrix);
-						animShader.normalMatrix.loadMatrix(normalMatrix);
 					})
 				);
 			});
 		});
-
-		VAO.unbind();
 		
 		animShader.unbind();
 	}
 	
 	private void renderToDepth(SpaceScene scene) {
+		depth.bind();
+		glClear(GL_DEPTH_BUFFER_BIT);
+		glEnable(GL_DEPTH_TEST);
+		
 		depthShader.bind();
-		depthFBO.bind();
-
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+		
 		depthShader.projectionMatrix.loadMatrix(scene.getProjectionMatrix());
 		depthShader.viewMatrix.loadMatrix(scene.getViewMatrix());
 
 		scene.getStaticModels().forEach(model -> {
-			List<SpaceEntity> entities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
+			fillEntityList(model.getId(), physicalTypes, scene);
 
-			model.getMaterials().forEach(
-					material -> getBoundableMeshesFromMaterial(material).forEach(
-							mesh -> mesh.render(entities, 
-									entity -> depthShader.modelMatrix.loadMatrix(entity.getModelMatrix()))));
+			model.getMaterialMap()
+			.forEach((_, meshList) -> meshList
+					.forEach(mesh -> mesh.render(modelEntityList, entity -> depthShader.modelMatrix.loadMatrix(entity.getModelMatrix()))));
 		});
-
-		VAO.unbind();
-		FBO.unbind();
+		
 		depthShader.unbind();
-	}
-	
-	@SuppressWarnings("unchecked")
-	private <T extends Mesh & Boundable> Stream<T> getBoundableMeshesFromMaterial(Material material) {
-		return (Stream<T>) Stream.concat(material.getStaticMeshes().stream(), material.getAnimatedMeshes().stream());
+		depth.unbind();
 	}
 	
 	/**
@@ -233,38 +228,27 @@ public class SpaceEntityRender {
 	 */
 	public void renderInstances(SpaceScene scene) {
 		instanceShader.bind();
-		
+
 		instanceShader.projection.loadMatrix(scene.getProjectionMatrix());
 		instanceShader.view.loadMatrix(scene.getViewMatrix());
-		
+
 		instanceShader.lightColor.loadVec3(0.5f, 0.5f, 0.5f);
 		scene.getViewMatrix().transformPosition(1000, 1200, -3500, lightPosition);
 		instanceShader.lightPosition.loadVec3(lightPosition);
 
-		scene.getStaticInstancedModels().forEach(model ->
-//			List<SpaceEntity> instanceEntities = scene.getSpaceEntities()
-//					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-//					.toList();
+		scene.getStaticInstancedModels()
+		.forEach(model -> model.getMaterialMap()
+				.forEach((material, meshList) -> meshList
+						.forEach(mesh -> {
+							if (mesh instanceof Instanceable) {
+								scene.getTextureCache().getTextureOrDefault(material.getDiffuseTexturePath()).activate(0);
+								scene.getTextureCache().getTextureOrDefault(material.getSpecularMapPath()).activate(1);
+								instanceShader.specularFactor.loadFloat(material.getSpecularFactor());
 
-			model.getBlinnPhongMaterials().forEach(material -> {
-				Texture diffuseTexture = scene.getTextureCache().getDefaultTexture();
-				if (material.getDiffuseTexturePath() != null) {
-					diffuseTexture = scene.getTextureCache().getTexture(material.getDiffuseTexturePath());
-				}
-				diffuseTexture.activate(0);
-				Texture specularMap = scene.getTextureCache().getDefaultTexture();
-				if (material.getSpecularMapPath() != null) {
-					specularMap = scene.getTextureCache().getTexture(material.getSpecularMapPath());
-				}
-				specularMap.activate(1);
-				instanceShader.specularFactor.loadFloat(material.getSpecularFactor());
-				
-				material.getInstancedMeshes().forEach(Mesh::render);
-			})
-		);
-		
-		VAO.unbind();
-		
+								mesh.render();
+							}
+						})));
+
 		instanceShader.unbind();
 	}
 	
@@ -277,21 +261,18 @@ public class SpaceEntityRender {
 		neonShader.projectionMatrix.loadMatrix(scene.getProjectionMatrix());
 		neonShader.viewMatrix.loadMatrix(scene.getViewMatrix());
 
-		scene.getStaticModels().forEach(model -> {
-			List<SpaceEntity> laserEntities = scene.getSpaceEntities()
-					.filter(entity -> Objects.equals(entity.getModelId(), model.getId()))
-					.toList();
+		scene.getEmissiveModels().forEach(model -> {
+			fillEntityList(model.getId(), EnumSet.of(EntityType.PROJECTILE), scene);
 
-			model.getMaterials().forEach(material -> {
-				if (material instanceof EmissiveMaterial emissiveMaterial) {
-					neonShader.objectColor.loadVec4(emissiveMaterial.getEmissive());
+			model.getMaterialMap().forEach((_, meshList) -> {
+				// TODO Re-implement emissive materials
+//				if (material instanceof EmissiveMaterial emissiveMaterial) {
+					neonShader.objectColor.loadVec4(1.0f, 0.0f, 0.0f, 1.0f);
 
-					material.getStaticMeshes().forEach(mesh -> mesh.render(laserEntities, laser -> neonShader.modelMatrix.loadMatrix(laser.getModelMatrix())));
-				}
+					meshList.forEach(mesh -> mesh.render(modelEntityList, laser -> neonShader.modelMatrix.loadMatrix(laser.getModelMatrix())));
+//				}
 			});
 		});
-		
-		VAO.unbind();
 		
 		neonShader.unbind();
 	}
@@ -303,7 +284,7 @@ public class SpaceEntityRender {
 		if (scene.getSpaceshipParticleEmitter().getParticles().isEmpty()) {
 			return;
 		}
-		var particleEmitter = scene.getSpaceshipParticleEmitter();
+		SpaceshipParticleEmitter particleEmitter = scene.getSpaceshipParticleEmitter();
 		
 		glEnable(GL_BLEND);
 		particleShader.bind();
@@ -315,25 +296,7 @@ public class SpaceEntityRender {
 		particleShader.cameraUpWorldspace.loadVec3(scene.getViewMatrix().m01(), scene.getViewMatrix().m11(), scene.getViewMatrix().m21());
 		
 		particleEmitter.getParticleTexture().activate(0);
-		
-		FloatBuffer positions = MemoryUtil.memAllocFloat(particleEmitter.getParticles().size() * 4);
-		ByteBuffer colors = MemoryUtil.memAlloc(particleEmitter.getParticles().size() * 4);
-		try {
-			for (var p : particleEmitter.getParticles()) {
-				positions.put(p.position().x).put(p.position().y).put(p.position().z).put(p.size());
-				colors.put(p.r()).put(p.g()).put(p.b()).put(p.a());
-			}
-			positions.flip();
-			colors.flip();
-			
-			particleEmitter.getParticleMesh().update(positions, colors);
-		} finally {
-			MemoryUtil.memFree(positions);
-			MemoryUtil.memFree(colors);
-		}
-		
 		particleEmitter.getParticleMesh().render();
-		VAO.unbind();
 		
 		particleShader.unbind();
 		glDisable(GL_BLEND);
@@ -360,6 +323,9 @@ public class SpaceEntityRender {
 		}
 		if (depthShader != null) {
 			depthShader.cleanup();
+		}
+		if (depth != null) {
+			depth.cleanup();
 		}
 	}
 	

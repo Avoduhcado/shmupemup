@@ -14,7 +14,6 @@ public final class SpaceEntity extends Entity {
 	private final String modelId;
 	
 	private final Body body;
-	private final AABBf worldCollider;
 	private final AnimationData animationData;
 	
 	/**
@@ -23,11 +22,11 @@ public final class SpaceEntity extends Entity {
 	 * @param scale 
 	 * @param modelId 
 	 * @param body 
+	 * @param animationData 
 	 */
 	public SpaceEntity(Vector3f position, AxisAngle4f orientation, float scale, String modelId, Body body, AnimationData animationData) {
 		super(ENTITY_ID_SUPPLIER.get());
 		this.body = body;
-		worldCollider = new AABBf();
 		this.transform = new Transform(position, orientation, scale);
 		this.modelId = modelId;
 		this.animationData = animationData;
@@ -51,8 +50,8 @@ public final class SpaceEntity extends Entity {
 	 */
 	@Override
 	public void updateModelMatrix() {
-		modelMatrix.translationRotateScale(transform.position(), transform.orientation(), transform.scale());
-		body.getCollider().transform(modelMatrix, worldCollider);
+		super.updateModelMatrix();
+		body.update(modelMatrix);
 	}
 	
 	@Override
@@ -83,7 +82,7 @@ public final class SpaceEntity extends Entity {
 	 * @return the body's AABB transformed by the entity's transform model matrix.
 	 */
 	public AABBf getWorldCollider() {
-		return worldCollider;
+		return body.getTransformedCollider();
 	}
 	
 	/**
